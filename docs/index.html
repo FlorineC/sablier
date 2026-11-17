@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#F1F4F1">
+<title>Sablier</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&family=Space+Mono:wght@400;700&display=swap">
+<link rel="stylesheet" href="app.css">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+</head>
+<body>
+<div id="app">
+  <header class="topbar">
+    <h1><span class="logo" aria-hidden="true">⏳</span> Sablier</h1>
+    <span class="sync-note" id="syncNote"></span>
+  </header>
+
+  <div class="listbar-wrap" id="listBarWrap">
+    <button class="chip-arrow" id="listPrev" aria-label="Listes précédentes" data-icon="chevL" hidden></button>
+    <div class="listbar" id="listBar" role="toolbar" aria-label="Listes"></div>
+    <button class="chip-arrow" id="listNext" aria-label="Listes suivantes" data-icon="chevR" hidden></button>
+    <button class="chip-btn" id="addList" aria-label="Nouvelle liste" title="Nouvelle liste" data-icon="plus"></button>
+    <button class="chip-btn solid" id="listMenu" aria-label="Gérer la liste ouverte" title="Gérer la liste" data-icon="more"></button>
+  </div>
+
+  <main id="main">
+    <!-- ======================= Liste ouverte ======================= -->
+    <section id="viewList">
+      <div class="list-summary">
+        <div class="sum-row" id="listSummary">
+          <div class="sum-item main"><span class="sum-val" id="listRemaining"></span> <span class="sum-lbl">restantes</span></div>
+          <div class="sum-item"><span class="sum-lbl">fin</span> <span class="sum-val sm" id="listFinish"></span></div>
+          <div class="sum-item"><span class="sum-val sm" id="listCount"></span> <span class="sum-lbl" id="listCountLbl"></span></div>
+        </div>
+        <div class="progress" id="listProgress" role="progressbar" aria-label="Progression de la liste"><div class="bar"></div></div>
+      </div>
+
+      <article class="now-card" id="nowCard" hidden>
+        <span class="edge-label" id="nowEta"></span>
+        <div class="now-head">
+          <span class="now-label" id="nowLabel">Prochaine</span>
+          <div class="now-head-acts">
+            <button class="icon-btn" id="nowLater" aria-label="Plus tard" title="Plus tard" data-icon="later"></button>
+            <button class="icon-btn" id="nowMenu" aria-label="Modifier la tâche" title="Modifier" data-icon="edit"></button>
+          </div>
+        </div>
+        <div class="now-body">
+          <div class="now-emoji" id="nowEmoji"></div>
+          <div class="now-text"><h2 class="now-title" id="nowTitle"></h2>
+            <div class="now-meta" id="nowMeta"><span id="nowPlanned"></span><span id="nowInfo"></span></div>
+          </div>
+        </div>
+        <div class="clock-area">
+          <div class="clock-box" id="nowClockBox">
+            <svg class="clock-svg" id="nowClock" viewBox="0 0 240 240" aria-hidden="true">
+              <g class="ring-g">
+                <circle class="ring-bg" cx="120" cy="120" r="108"></circle>
+                <circle class="ring-progress" id="miniRing" cx="120" cy="120" r="108" transform="rotate(-90 120 120)"></circle>
+              </g>
+              <g class="pie-g">
+                <circle class="dial-face" cx="120" cy="120" r="118"></circle>
+                <g class="dial-marks"></g>
+                <g transform="translate(240 0) scale(-1 1)"><path class="pie-wedge" id="miniPie" d=""></path></g>
+                <circle class="dial-hub" cx="120" cy="120" r="56"></circle>
+              </g>
+            </svg>
+            <div class="clock-center">
+              <div class="now-timer editable" id="nowTimer" role="button" tabindex="0" title="Toucher pour taper le temps restant" aria-label="Temps restant — toucher pour modifier"></div>
+              <label class="timer-input-wrap" id="nowTimerWrap" hidden><input class="timer-input" id="nowTimerInput" type="text" inputmode="decimal" autocomplete="off" placeholder="mm:ss" aria-label="Temps restant (minutes ou mm:ss)"></label>
+            </div>
+          </div>
+          <span class="edit-hint" aria-hidden="true">toucher l'horloge pour changer le temps</span>
+        </div>
+        <div class="progress" id="nowProgress"><div class="bar"></div></div>
+        <div class="seg" aria-label="Ajuster le temps">
+          <button id="nowMinus5" aria-label="Retirer 5 minutes">−5 min</button>
+          <button id="nowPlus1" aria-label="Ajouter 1 minute">+1 min</button>
+          <button id="nowPlus5" aria-label="Ajouter 5 minutes">+5 min</button>
+        </div>
+        <div class="now-actions">
+          <button class="big-btn" id="nowToggle"></button>
+          <button class="round-btn" id="nowDone" aria-label="Terminer" title="Terminer" data-icon="check"></button>
+          <button class="round-btn" id="nowFocus" aria-label="Mode focus" title="Mode focus" data-icon="focus"></button>
+        </div>
+      </article>
+
+      <form class="quick-add" id="quickAddForm" autocomplete="off">
+        <input id="quickAdd" type="text" placeholder="Ajouter une tâche… ex. Emails 15m" aria-label="Nouvelle tâche" enterkeyhint="done">
+        <button type="button" class="add-top" id="quickAddTop" aria-label="Ajouter en haut de la liste" title="Ajouter en haut (Maj+Entrée)" data-icon="top"></button>
+        <button type="submit" class="add-main" aria-label="Ajouter en bas de la liste" title="Ajouter en bas (Entrée)" data-icon="plus"></button>
+      </form>
+      <p class="hint">Durée en fin de saisie : 15m, 1h30 · <span class="kbd-only">Maj+Entrée ou </span>⤒ ajoute en haut</p>
+
+      <h3 class="queue-title" id="queueTitle" hidden>À suivre</h3>
+      <ul class="task-list" id="taskList"></ul>
+      <p class="empty-hint" id="listEmpty" hidden>Liste vide. Ajoute une tâche ci-dessus, ou lance une routine.</p>
+      <div class="list-done">
+        <button class="done-toggle" id="doneToggle" aria-expanded="false" hidden></button>
+        <div id="listDone"></div>
+      </div>
+    </section>
+
+    <!-- ======================= Plus tard ======================= -->
+    <section id="viewLater" hidden>
+      <h2 class="view-title">Plus tard</h2>
+      <div id="laterList"></div>
+      <p class="empty-hint" id="laterEmpty" hidden>Rien ici. Le bouton « Plus tard » d'une tâche la met de côté.</p>
+    </section>
+
+    <!-- ======================= Terminées ======================= -->
+    <section id="viewDone" hidden>
+      <h2 class="view-title">Terminées</h2>
+      <p class="stats-line" id="doneStats"></p>
+      <div id="doneList"></div>
+      <p class="empty-hint" id="doneEmpty" hidden>Aucune tâche terminée pour l'instant.</p>
+      <button class="btn ghost block" id="clearDone" style="margin-top:14px" hidden>Vider l'historique</button>
+    </section>
+
+    <!-- ======================= Routines ======================= -->
+    <section id="viewRoutines" hidden>
+      <h2 class="view-title">Routines</h2>
+      <button class="btn primary block" id="newRoutineBtn" style="margin-bottom:14px">＋ Nouvelle routine</button>
+      <div id="routineList"></div>
+      <p class="empty-hint" id="routineEmpty" hidden>Une routine est une liste type que tu relances en un geste. Crée-la ici, ou enregistre une liste existante via ⋯ à côté des listes.</p>
+    </section>
+
+    <!-- ======================= Éditeur de routine ======================= -->
+    <section id="viewRoutineEdit" hidden>
+      <div class="re-head">
+        <button class="back-btn" id="reCancel">← Annuler</button>
+        <h2 id="reHeading">Nouvelle routine</h2>
+      </div>
+      <label class="field"><span>Nom</span><input id="reName" type="text" placeholder="Ex. Routine du matin" autocomplete="off"></label>
+      <p class="re-total" id="reTotal"></p>
+      <ul id="reItems"></ul>
+      <form class="quick-add" id="reAddForm" autocomplete="off">
+        <input id="reAdd" type="text" placeholder="Ajouter une étape… ex. Café 10m" aria-label="Nouvelle étape" enterkeyhint="done">
+        <button type="submit" class="add-main" aria-label="Ajouter l'étape" data-icon="plus"></button>
+      </form>
+      <p class="error" id="reError" hidden></p>
+      <button class="btn primary block" id="reSave" style="margin-top:14px">Enregistrer la routine</button>
+    </section>
+
+    <!-- ======================= Réglages ======================= -->
+    <section id="viewSettings" hidden>
+      <h2 class="view-title">Réglages</h2>
+      <div class="settings">
+        <p class="set-group">Minuteur</p>
+        <label class="setting"><span>Passer automatiquement à la tâche suivante quand le temps est écoulé</span><input type="checkbox" id="setAutoAdvance"></label>
+        <label class="setting"><span>Démarrer la suivante quand je clique sur « Terminé »</span><input type="checkbox" id="setAuto"></label>
+        <label class="setting"><span>Style d'horloge</span>
+          <select id="setClock"><option value="ring">Anneau</option><option value="pie">Camembert</option><option value="digital">Chiffres</option></select>
+        </label>
+        <p class="set-group">Son</p>
+        <label class="setting"><span>Son à la fin du temps</span><input type="checkbox" id="setSound"></label>
+        <div class="setting">
+          <label for="setSoundType">Son</label>
+          <div class="setting-ctrl">
+            <select id="setSoundType"><option value="chime">Carillon</option><option value="bell">Cloche</option><option value="bowl">Bol chantant</option><option value="marimba">Marimba</option><option value="harp">Harpe</option></select>
+            <button class="icon-btn soft" id="testSound" aria-label="Tester le son" title="Tester le son" data-icon="sound"></button>
+          </div>
+        </div>
+        <p class="set-group">Listes &amp; routines</p>
+        <label class="setting"><span>Durée par défaut (min)</span><input type="number" id="setDefault" min="1" max="600" inputmode="numeric"></label>
+        <label class="setting"><span>Charger une routine dans une liste</span>
+          <select id="setRoutineInsert"><option value="bottom">En bas</option><option value="top">En haut</option></select>
+        </label>
+        <label class="setting"><span>Afficher les terminées en bas de la liste</span><input type="checkbox" id="setShowDone"></label>
+        <p class="set-group">Apparence</p>
+        <label class="setting"><span>Thème</span>
+          <select id="setTheme"><option value="auto">Automatique</option><option value="light">Clair</option><option value="dark">Sombre</option></select>
+        </label>
+        <div class="setting column"><span>Couleur</span><div class="swatches" id="setAccent" role="group" aria-label="Couleur d'accentuation"></div></div>
+        <div id="accountGroup" class="settings" hidden>
+          <p class="set-group">Compte &amp; synchronisation</p>
+          <div class="setting column"><span id="accountEmail"></span>
+            <div class="setting-ctrl" style="margin-top:10px">
+              <button class="btn ghost" id="signOut" hidden>Se déconnecter</button>
+              <button class="btn primary" id="signIn" hidden>Se connecter</button>
+            </div>
+          </div>
+        </div>
+        <p class="set-group">Sauvegarde</p>
+        <div class="setting"><span>Mes données</span>
+          <div class="setting-ctrl"><button class="btn ghost" id="exportData">Exporter</button><button class="btn ghost" id="importData">Importer</button></div>
+        </div>
+      </div>
+      <a class="footer-link" href="tests.html">Spécifications &amp; résultats des tests →</a>
+    </section>
+
+    <!-- ======================= Focus ======================= -->
+    <section id="viewFocus" class="focus-view" hidden>
+      <button class="back-btn" id="focusBack">← Liste</button>
+      <div class="focus-list" id="focusList"></div>
+      <div class="focus-head"><span class="focus-emoji" id="focusEmoji"></span><h2 class="focus-title" id="focusTitle"></h2></div>
+      <div class="ring-wrap" id="focusClock">
+        <svg class="pie-svg" id="focusPie" viewBox="0 0 240 240" aria-hidden="true" hidden>
+          <circle class="dial-face" cx="120" cy="120" r="118"></circle>
+          <g class="dial-marks"></g>
+          <g transform="translate(240 0) scale(-1 1)"><path class="pie-wedge" id="pieWedge" d=""></path></g>
+          <circle class="dial-hub" cx="120" cy="120" r="56"></circle>
+        </svg>
+        <svg class="ring-svg" id="focusRingSvg" viewBox="0 0 220 220" aria-hidden="true">
+          <circle class="ring-bg" cx="110" cy="110" r="98"></circle>
+          <circle class="ring-progress" id="ringProgress" cx="110" cy="110" r="98"></circle>
+        </svg>
+        <div class="focus-timer editable" id="focusTimer" role="button" tabindex="0" title="Toucher pour taper le temps restant" aria-label="Temps restant — toucher pour modifier"></div>
+        <label class="timer-input-wrap focus-input" id="focusTimerWrap" hidden><input class="timer-input" id="focusTimerInput" type="text" inputmode="decimal" autocomplete="off" placeholder="mm:ss" aria-label="Temps restant (minutes ou mm:ss)"></label>
+      </div>
+      <p class="focus-state" id="focusState"></p>
+      <div class="seg wide" aria-label="Ajuster le temps">
+        <button id="focusMinus5">−5 min</button>
+        <button id="focusPlus1">+1 min</button>
+        <button id="focusPlus5">+5 min</button>
+      </div>
+      <div class="focus-actions">
+        <button class="round-btn" id="focusSkip" aria-label="Passer" title="Passer" data-icon="skip"></button>
+        <button class="big-btn" id="focusToggle"></button>
+        <button class="round-btn accent" id="focusDone" aria-label="Terminé" title="Terminé" data-icon="check"></button>
+      </div>
+      <p class="focus-next" id="focusNext"></p>
+    </section>
+  </main>
+
+  <div class="toast" id="toast" role="status" hidden><span id="toastMsg"></span><button id="toastUndo">Annuler</button></div>
+  <div class="others" id="others" hidden></div>
+
+  <nav class="tabbar" id="tabbar">
+    <button data-tab="list" data-icon="list"><span>Liste</span></button>
+    <button data-tab="later" data-icon="later"><span>Plus tard</span></button>
+    <button data-tab="done" data-icon="done"><span>Terminées</span></button>
+    <button data-tab="routines" data-icon="repeat"><span>Routines</span></button>
+    <button data-tab="settings" data-icon="settings"><span>Réglages</span></button>
+  </nav>
+</div>
+
+<!-- ======================= Fenêtres ======================= -->
+<div class="scrim" id="taskSheet" hidden>
+  <div class="sheet" role="dialog" aria-label="Tâche">
+    <div class="grabber" aria-hidden="true"></div>
+    <div class="sheet-head"><h3>Modifier la tâche</h3><button class="icon-btn" id="tsClose" aria-label="Fermer" data-icon="x"></button></div>
+    <div class="ts-edit">
+      <div class="emoji-preview" id="tsEmojiPreview"></div>
+      <input type="text" id="tsTitle" aria-label="Titre">
+      <label class="min-chip big"><input type="number" id="tsMinutes" min="1" max="600" inputmode="numeric" aria-label="Durée"><span>min</span></label>
+    </div>
+    <div class="emoji-grid" id="tsEmojiGrid"></div>
+    <div class="sheet-actions">
+      <button class="btn ghost" id="tsEmojiAuto">✨ Emoji auto</button>
+      <button class="btn primary" id="tsSave">Enregistrer</button>
+    </div>
+    <div class="ts-actions">
+      <button data-ts="top" data-icon="top"><span>Tout en haut</span></button>
+      <button data-ts="up" data-icon="up"><span>Monter</span></button>
+      <button data-ts="down" data-icon="down"><span>Descendre</span></button>
+      <button data-ts="bottom" data-icon="bottom"><span>Tout en bas</span></button>
+      <button data-ts="complete" data-icon="check"><span>Terminer</span></button>
+      <button data-ts="dup" data-icon="dup"><span>Dupliquer</span></button>
+      <button data-ts="later" data-icon="later"><span>Plus tard</span></button>
+      <button data-ts="delete" class="danger" data-icon="trash"><span>Supprimer</span></button>
+    </div>
+    <div class="ts-move" id="tsMove"></div>
+  </div>
+</div>
+
+<div class="scrim" id="listSheet" hidden>
+  <div class="sheet" role="dialog" aria-labelledby="listSheetTitle">
+    <div class="grabber" aria-hidden="true"></div>
+    <div class="sheet-head"><h3 id="listSheetTitle">Nouvelle liste</h3><button class="icon-btn" id="listClose" aria-label="Fermer" data-icon="x"></button></div>
+    <input type="text" id="listName" placeholder="Ex. Boulot, Cuisine, Ménage…" autocomplete="off">
+    <button class="btn primary block" id="listSave">Créer</button>
+    <div class="menu-list" id="listExtra">
+      <button id="listToRoutine">💾 Enregistrer cette liste comme routine</button>
+      <button id="listDelete" class="danger">🗑 Supprimer la liste</button>
+    </div>
+  </div>
+</div>
+
+<div class="scrim" id="routineMenu" hidden>
+  <div class="sheet" role="dialog" aria-labelledby="routineMenuTitle">
+    <div class="grabber" aria-hidden="true"></div>
+    <div class="sheet-head"><h3 id="routineMenuTitle"></h3><button class="icon-btn" id="rmClose" aria-label="Fermer" data-icon="x"></button></div>
+    <div class="menu-list">
+      <button data-rm="append"></button>
+      <button data-rm="replace"></button>
+      <button data-rm="edit">✏️ Modifier la routine</button>
+      <button data-rm="delete" class="danger">🗑 Supprimer la routine</button>
+    </div>
+  </div>
+</div>
+
+<div class="scrim" id="dataSheet" hidden>
+  <div class="sheet" role="dialog" aria-labelledby="dataTitle">
+    <div class="grabber" aria-hidden="true"></div>
+    <div class="sheet-head"><h3 id="dataTitle">Mes données</h3><button class="icon-btn" id="dataClose" aria-label="Fermer" data-icon="x"></button></div>
+    <p class="sheet-note" id="dataHelp"></p>
+    <textarea id="dataText" class="data-text" spellcheck="false" autocomplete="off" aria-label="Données"></textarea>
+    <p class="error" id="dataError" hidden>Ce texte ne ressemble pas à une sauvegarde de Sablier.</p>
+    <button class="btn primary block" id="dataCopy">Copier</button>
+    <button class="btn primary block" id="dataApply" hidden>Importer ces données</button>
+  </div>
+</div>
+
+<div class="scrim" id="authSheet" hidden>
+  <div class="sheet" role="dialog" aria-labelledby="authTitle">
+    <div class="grabber" aria-hidden="true"></div>
+    <h3 id="authTitle">Synchroniser tes appareils</h3>
+    <p class="sheet-note">Connecte-toi avec le même compte sur le web et sur ton téléphone pour retrouver partout tes listes, minuteurs et routines.</p>
+    <input type="email" id="authEmail" placeholder="E-mail" autocomplete="email" inputmode="email">
+    <input type="password" id="authPassword" placeholder="Mot de passe (6 caractères min.)" autocomplete="current-password">
+    <p class="error" id="authError" hidden></p>
+    <div class="sheet-actions">
+      <button class="btn ghost" id="authCreate">Créer un compte</button>
+      <button class="btn primary" id="authLogin">Se connecter</button>
+    </div>
+    <button class="back-btn" id="authSkip" style="align-self:center">Continuer sans compte</button>
+  </div>
+</div>
+
+<div class="scrim" id="confirmSheet" hidden>
+  <div class="sheet" role="alertdialog" aria-labelledby="confirmMsg">
+    <h3 id="confirmMsg"></h3>
+    <div class="sheet-actions">
+      <button class="btn ghost" id="confirmCancel">Annuler</button>
+      <button class="btn primary" id="confirmOk">Confirmer</button>
+    </div>
+  </div>
+</div>
+
+<div class="celebrate" id="celebrate" hidden>
+  <div class="card"><div class="big">🎉</div><h2 id="celebrateTitle">Liste terminée !</h2><p id="celebrateSub"></p></div>
+</div>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>

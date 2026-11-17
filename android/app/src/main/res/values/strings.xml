@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Sablier</string>
+    <string name="title_activity_main">Sablier</string>
+    <string name="package_name">fr.sablier.app</string>
+    <string name="custom_url_scheme">fr.sablier.app</string>
+</resources>

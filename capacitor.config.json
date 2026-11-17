@@ -1,0 +1,8 @@
+{
+  "appId": "fr.sablier.app",
+  "appName": "Sablier",
+  "webDir": "docs",
+  "android": {
+    "backgroundColor": "#F1F4F1"
+  }
+}

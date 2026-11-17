@@ -1,0 +1,400 @@
+{
+ "ranAt": "2026-11-17T18:19:42.590Z",
+ "results": [
+  {
+   "specId": "L1",
+   "name": "créer, renommer, supprimer (et annuler) une liste",
+   "ok": true
+  },
+  {
+   "specId": "L1",
+   "name": "la dernière liste ne peut pas être supprimée",
+   "ok": true
+  },
+  {
+   "specId": "L2",
+   "name": "les pastilles changent de liste et montrent le minuteur",
+   "ok": true
+  },
+  {
+   "specId": "L3",
+   "name": "deux listes tournent en même temps",
+   "ok": true
+  },
+  {
+   "specId": "L4",
+   "name": "piloter les minuteurs des autres listes depuis la barre d'ensemble",
+   "ok": true
+  },
+  {
+   "specId": "L5",
+   "name": "déplacer une tâche vers une autre liste",
+   "ok": true
+  },
+  {
+   "specId": "A1",
+   "name": "ajout rapide par Entrée, champ vidé, titre vide refusé",
+   "ok": true
+  },
+  {
+   "specId": "A2",
+   "name": "durée reconnue + emoji suggéré",
+   "ok": true
+  },
+  {
+   "specId": "A5",
+   "name": "édition en ligne dans la file + via le menu, conservée au rechargement",
+   "ok": true
+  },
+  {
+   "specId": "A6",
+   "name": "réordonner par glisser-déposer dans la file",
+   "ok": true
+  },
+  {
+   "specId": "A6",
+   "name": "monter / descendre via le menu",
+   "ok": true
+  },
+  {
+   "specId": "A7",
+   "name": "dupliquer",
+   "ok": true
+  },
+  {
+   "specId": "A8",
+   "name": "supprimer puis annuler",
+   "ok": true
+  },
+  {
+   "specId": "A9",
+   "name": "cartes épurées : actions secondaires dans le menu ⋯",
+   "ok": true
+  },
+  {
+   "specId": "U1",
+   "name": "carte « Maintenant » : prochaine tâche, puis tâche en cours",
+   "ok": true
+  },
+  {
+   "specId": "U2",
+   "name": "file « À suivre » numérotée",
+   "ok": true
+  },
+  {
+   "specId": "U3",
+   "name": "récapitulatif compact avec barre de progression",
+   "ok": true
+  },
+  {
+   "specId": "B1",
+   "name": "nombre de tâches et temps restant",
+   "ok": true
+  },
+  {
+   "specId": "B2",
+   "name": "heure de fin estimée",
+   "ok": true
+  },
+  {
+   "specId": "C1",
+   "name": "▶ sur une tâche de la file la passe en tête et la démarre",
+   "ok": true
+  },
+  {
+   "specId": "C2",
+   "name": "pause / reprise, et survit au rechargement",
+   "ok": true
+  },
+  {
+   "specId": "C3",
+   "name": "+1 / +5 / −5 en mode focus",
+   "ok": true
+  },
+  {
+   "specId": "C4",
+   "name": "fin du temps : signal unique nommant la liste, puis dépassement",
+   "ok": true
+  },
+  {
+   "specId": "C5",
+   "name": "terminer : la suivante démarre, l'historique garde le temps réel",
+   "ok": true
+  },
+  {
+   "specId": "C6",
+   "name": "passer",
+   "ok": true
+  },
+  {
+   "specId": "C7",
+   "name": "mode focus : liste, titre, anneau, « Ensuite »",
+   "ok": true
+  },
+  {
+   "specId": "C8",
+   "name": "titre de l'onglet avec deux listes",
+   "ok": true
+  },
+  {
+   "specId": "D1",
+   "name": "« Plus tard » en un clic (file et carte Maintenant), annulable",
+   "ok": true
+  },
+  {
+   "specId": "D1",
+   "name": "« Plus tard » via le menu",
+   "ok": true
+  },
+  {
+   "specId": "D2",
+   "name": "réactiver dans la liste ouverte, supprimer",
+   "ok": true
+  },
+  {
+   "specId": "E1",
+   "name": "historique : liste d'origine, estimé vs réel, total",
+   "ok": true
+  },
+  {
+   "specId": "E2",
+   "name": "rouvrir et vider (avec confirmation)",
+   "ok": true
+  },
+  {
+   "specId": "E3",
+   "name": "célébration quand une liste est terminée",
+   "ok": true
+  },
+  {
+   "specId": "F1",
+   "name": "créer une routine de zéro dans l'onglet Routines",
+   "ok": true
+  },
+  {
+   "specId": "F2",
+   "name": "modifier une routine : renommer, réordonner, retirer ; Annuler abandonne",
+   "ok": true
+  },
+  {
+   "specId": "F3",
+   "name": "lancer : nouvelle liste démarrée, en parallèle de l'existante",
+   "ok": true
+  },
+  {
+   "specId": "F4",
+   "name": "charger dans la liste ouverte : ajouter, remplacer (confirmation)",
+   "ok": true
+  },
+  {
+   "specId": "F5",
+   "name": "enregistrer la liste ouverte comme routine",
+   "ok": true
+  },
+  {
+   "specId": "F6",
+   "name": "supprimer une routine (confirmation + annuler)",
+   "ok": true
+  },
+  {
+   "specId": "G1",
+   "name": "rechargement : listes, liste ouverte, plus tard, réglages",
+   "ok": true
+  },
+  {
+   "specId": "G2",
+   "name": "base partagée chargée au démarrage, jamais écrasée, puis alimentée",
+   "ok": true
+  },
+  {
+   "specId": "G2",
+   "name": "base vide : l'état local y est écrit",
+   "ok": true
+  },
+  {
+   "specId": "G3",
+   "name": "distant plus récent appliqué, plus ancien ignoré",
+   "ok": true
+  },
+  {
+   "specId": "G4",
+   "name": "données v2 de la base affichées dans « Ma liste »",
+   "ok": true
+  },
+  {
+   "specId": "H1",
+   "name": "réglages : enchaînement, durée par défaut, thème",
+   "ok": true
+  },
+  {
+   "specId": "I1",
+   "name": "raccourcis N, Espace, Échap, [ ]",
+   "ok": true
+  },
+  {
+   "specId": "C3",
+   "name": "changer le temps sur la carte « Maintenant » (boutons et saisie)",
+   "ok": true
+  },
+  {
+   "specId": "C3",
+   "name": "toucher le minuteur et taper le temps restant (carte et focus)",
+   "ok": true
+  },
+  {
+   "specId": "A10",
+   "name": "glisser une tâche de la file sur « Maintenant » quand la liste tourne",
+   "ok": true
+  },
+  {
+   "specId": "A10",
+   "name": "glisser sur « Maintenant » sans minuteur : devient la prochaine",
+   "ok": true
+  },
+  {
+   "specId": "A11",
+   "name": "tout en haut / tout en bas en un clic sur la carte",
+   "ok": true
+  },
+  {
+   "specId": "A11",
+   "name": "tout en haut / tout en bas depuis le menu",
+   "ok": true
+  },
+  {
+   "specId": "U4",
+   "name": "heure estimée sur chaque tâche",
+   "ok": true
+  },
+  {
+   "specId": "L6",
+   "name": "flèches pour parcourir beaucoup de listes",
+   "ok": true
+  },
+  {
+   "specId": "E4",
+   "name": "afficher les terminées en bas de la liste et les remettre",
+   "ok": true
+  },
+  {
+   "specId": "A12",
+   "name": "ajouter une tâche en haut (bouton ⤒ ou Maj+Entrée)",
+   "ok": true
+  },
+  {
+   "specId": "U4",
+   "name": "créneau posé sur le bord de la carte, en gras",
+   "ok": true
+  },
+  {
+   "specId": "U3",
+   "name": "temps restant de la liste en grand",
+   "ok": true
+  },
+  {
+   "specId": "A9",
+   "name": "terminer et supprimer en un clic sur la carte (supprimer annulable)",
+   "ok": true
+  },
+  {
+   "specId": "C10",
+   "name": "styles d'horloge : anneau, camembert, chiffres",
+   "ok": true
+  },
+  {
+   "specId": "H2",
+   "name": "changer la couleur d'accentuation (mémorisée)",
+   "ok": true
+  },
+  {
+   "specId": "C11",
+   "name": "passage automatique à la tâche suivante à la fin du temps",
+   "ok": true
+  },
+  {
+   "specId": "F4",
+   "name": "réglage : charger une routine en haut de la liste",
+   "ok": true
+  },
+  {
+   "specId": "U5",
+   "name": "mobile : cibles ≥ 40 px, champs ≥ 16 px, pas de défilement horizontal",
+   "ok": true
+  },
+  {
+   "specId": "C10",
+   "name": "horloges en grand : camembert du focus et miniature de la carte",
+   "ok": true
+  },
+  {
+   "specId": "H2",
+   "name": "toute l'interface suit la couleur choisie (plus rien de vert)",
+   "ok": true
+  },
+  {
+   "specId": "H3",
+   "name": "choisir un son le fait entendre ; la fin du temps utilise ce son",
+   "ok": true
+  },
+  {
+   "specId": "C10",
+   "name": "carte « Maintenant » : grande horloge avec le temps au centre",
+   "ok": true
+  },
+  {
+   "specId": "C10",
+   "name": "cadran minuteur : 60 graduations, chiffres 0 à 55, part = minutes restantes",
+   "ok": true
+  },
+  {
+   "specId": "H3",
+   "name": "sons : registre médium-aigu, non répétitifs, volume homogène",
+   "ok": true
+  },
+  {
+   "specId": "A9",
+   "name": "disposition : ⤒/⤓ en colonne à gauche, actions libellées en bas à droite",
+   "ok": true
+  },
+  {
+   "specId": "C3",
+   "name": "toucher l'horloge par erreur ne fait rien perdre ; secondes acceptées",
+   "ok": true
+  },
+  {
+   "specId": "H3",
+   "name": "sons sobres : 2 notes max, ≤ 3 kHz, centrés (gauche = droite)",
+   "ok": true
+  },
+  {
+   "specId": "G5",
+   "name": "exporter puis réimporter ses données",
+   "ok": true
+  },
+  {
+   "specId": "S1",
+   "name": "connexion : erreur en français, création de compte, déconnexion",
+   "ok": true
+  },
+  {
+   "specId": "S1",
+   "name": "continuer sans compte : l'appli marche en local",
+   "ok": true
+  },
+  {
+   "specId": "S2",
+   "name": "synchronisation Firestore : données du compte chargées puis mises à jour",
+   "ok": true
+  },
+  {
+   "specId": "S3",
+   "name": "installable : manifeste, icônes et service worker",
+   "ok": true
+  },
+  {
+   "specId": "N1",
+   "name": "appli Android : alarme programmée à la fin de la tâche, annulée en pause",
+   "ok": true
+  }
+ ]
+}

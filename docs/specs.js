@@ -1,0 +1,92 @@
+// Spécifications fonctionnelles de Sablier (v3) — source unique.
+// Chaque test (unitaire ou E2E) référence un identifiant ci-dessous ;
+// tests.html affiche la liste avec le statut des tests associés.
+
+export const SPECS = [
+  // ---------- L. Listes multiples ----------
+  { id: "L1", group: "Listes en parallèle", title: "Plusieurs listes", detail: "On peut créer, renommer et supprimer des listes. Il y en a toujours au moins une. Une liste supprimée peut être restaurée via « Annuler »." },
+  { id: "L2", group: "Listes en parallèle", title: "Sélecteur de listes", detail: "Une rangée de pastilles permet de passer d'une liste à l'autre. Chaque pastille indique si la liste tourne (point animé) et son temps restant sur la tâche en cours." },
+  { id: "L3", group: "Listes en parallèle", title: "Minuteurs simultanés", detail: "Chaque liste a son propre minuteur : plusieurs listes peuvent tourner en même temps, indépendamment. Dans une même liste, une seule tâche tourne à la fois." },
+  { id: "L4", group: "Listes en parallèle", title: "Vue d'ensemble des minuteurs", detail: "Les minuteurs des autres listes actives restent visibles et pilotables (pause/reprise, terminer) depuis une barre compacte, sans quitter la liste ouverte." },
+  { id: "L6", group: "Listes en parallèle", title: "Parcourir beaucoup de listes", detail: "Quand les pastilles dépassent la largeur, des flèches ‹ › apparaissent du côté où il reste des listes à voir et font défiler la rangée." },
+  { id: "L5", group: "Listes en parallèle", title: "Déplacer une tâche vers une autre liste", detail: "Depuis le menu d'une tâche ; si elle tournait, elle est mise en pause et son temps passé est conservé." },
+
+  // ---------- A. Tâches ----------
+  { id: "A1", group: "Tâches", title: "Ajout rapide", detail: "Un champ ajoute une tâche à la liste ouverte avec Entrée. Titre obligatoire (espaces ignorés). Ajout en fin de liste par défaut." },
+  { id: "A12", group: "Tâches", title: "Ajouter en haut", detail: "Le bouton ⤒ à côté du champ (ou Maj+Entrée) ajoute la tâche en haut de la liste : juste après la tâche en cours s'il y en a une, sinon elle devient la prochaine." },
+  { id: "A2", group: "Tâches", title: "Durée dans la saisie", detail: "Une durée en fin de saisie est reconnue et retirée du titre : « 15 », « 15m », « 15 min », « 1h », « 1h30 », « 1h 30m », « 1,5h », « 90' ». Sinon : durée par défaut des réglages." },
+  { id: "A3", group: "Tâches", title: "Bornes de durée", detail: "Une durée est toujours un entier entre 1 et 600 minutes ; une valeur invalide est ignorée." },
+  { id: "A4", group: "Tâches", title: "Emoji automatique", detail: "Sans emoji choisi, il est suggéré d'après le titre (mots-clés FR/EN, sans accents, en début de mot, le plus spécifique gagne). Défaut : 🧠." },
+  { id: "A5", group: "Tâches", title: "Édition", detail: "Titre et durée modifiables directement dans la carte ; emoji via le menu. Un titre vidé est refusé." },
+  { id: "A6", group: "Tâches", title: "Réordonner", detail: "Glisser-déposer par la poignée, ou Monter/Descendre depuis le menu. Le réordonnancement ne perd jamais de tâche." },
+  { id: "A10", group: "Tâches", title: "Glisser vers « Maintenant »", detail: "Glisser une tâche de la file sur la carte « Maintenant » en fait la tâche courante : elle démarre si la liste tournait, reste en pause si la liste était en pause, devient « Prochaine » sinon. L'ancienne tâche courante repasse en tête de file avec son temps." },
+  { id: "A11", group: "Tâches", title: "Tout en haut / tout en bas", detail: "En un clic sur la carte (ou depuis le menu) : « Tout en haut » place la tâche en tête de la file (juste après la tâche en cours s'il y en a une), « Tout en bas » en fin de liste." },
+  { id: "A7", group: "Tâches", title: "Dupliquer", detail: "Duplique juste en dessous, nouvel id, temps passé à zéro." },
+  { id: "A8", group: "Tâches", title: "Supprimer avec annulation", detail: "Supprime la tâche (et l'arrête si elle tournait). Un bandeau « Annuler » restaure l'état précédent." },
+  { id: "A9", group: "Tâches", title: "Actions en un clic", detail: "Chaque carte de la file : à gauche, une colonne « Tout en haut » ⤒ / « Tout en bas » ⤓ ; en bas à droite, une barre d'actions avec icône et libellé (Plus tard, Fait, Suppr., Modifier) ; « Supprimer » est annulable. « Modifier » ouvre la fiche de la tâche (titre, durée, emoji, monter/descendre, dupliquer, déplacer). La carte « Maintenant » a « Plus tard » et « Modifier »." },
+
+  // ---------- U. Hiérarchie visuelle ----------
+  { id: "U1", group: "Hiérarchie visuelle", title: "Carte « Maintenant »", detail: "En tête de liste, une grande carte montre la tâche en cours (emoji, titre, grand minuteur, barre de progression, pause/terminer/focus). Sans tâche en cours, elle propose de démarrer la prochaine." },
+  { id: "U2", group: "Hiérarchie visuelle", title: "File « À suivre »", detail: "Les autres tâches s'affichent dessous, numérotées, dans l'ordre où elles viendront." },
+  { id: "U4", group: "Hiérarchie visuelle", title: "Heure estimée de chaque tâche", detail: "Chaque tâche de la file affiche son créneau estimé « début → fin » (enchaînement depuis maintenant, temps déjà passé déduit), en gras, centré horizontalement sur le bord supérieur de la carte qu'il « coupe » (comme Llama Life) ; la carte « Maintenant » affiche de même son heure de fin. Mis à jour en continu." },
+  { id: "U3", group: "Hiérarchie visuelle", title: "Progression de la liste", detail: "Temps restant de la liste en grand chiffre, avec heure de fin et nombre de tâches ; un récapitulatif : tâches restantes, temps restant, heure de fin, et une barre de progression (temps passé / temps prévu, tâches terminées aujourd’hui dans la liste incluses)." },
+
+  { id: "U5", group: "Hiérarchie visuelle", title: "Utilisable au doigt sur mobile", detail: "Sur un écran de téléphone : toutes les commandes font au moins 40 × 40 px, les champs de saisie au moins 16 px (pas de zoom automatique sur iPhone), aucun défilement horizontal, icônes vectorielles nettes." },
+
+  // ---------- B. Récapitulatif ----------
+  { id: "B1", group: "Récapitulatif", title: "Compteur et temps restant", detail: "Par liste : nombre de tâches et somme du temps restant (estimé − déjà passé, jamais négatif)." },
+  { id: "B2", group: "Récapitulatif", title: "Heure de fin estimée", detail: "Maintenant + temps restant, format 24 h. « —:— » si la liste est vide." },
+
+  // ---------- C. Minuteur ----------
+  { id: "C1", group: "Minuteur", title: "Démarrer", detail: "▶ sur une tâche la démarre et la place en tête de liste. Le bouton principal démarre la tâche en cours, sinon la première. Démarrer une autre tâche de la même liste met la précédente en pause en conservant son temps." },
+  { id: "C2", group: "Minuteur", title: "Pause / reprise fiables", detail: "Temps calculé par horodatage : juste après rechargement, onglet en arrière-plan ou changement d'appareil." },
+  { id: "C3", group: "Minuteur", title: "Ajuster le temps", detail: "−5 / +1 / +5 min sur la carte « Maintenant » et en mode focus. Toucher l'horloge (carte ou focus) ouvre un champ pré-rempli avec le temps restant exact (ex. 19:42) : on peut taper des minutes (« 20 ») ou des minutes et secondes (« 19:30 », « 19.30 », « 19 30 », « 1:05:00 »). Le minuteur repart exactement de cette valeur, sans perdre le temps déjà passé. Un toucher involontaire ne change rien : fermer le champ sans l'avoir modifié (ou Échap) laisse le minuteur intact. S'applique à la tâche en cours, ou à la prochaine si rien ne tourne. Minimum 1 min." },
+  { id: "C4", group: "Minuteur", title: "Fin du temps et dépassement", detail: "À zéro, un signal (son + visuel + bandeau nommant la liste) une seule fois par tâche ; le minuteur continue en « +MM:SS ». Ajouter du temps réarme le signal." },
+  { id: "C5", group: "Minuteur", title: "Terminer", detail: "Archive la tâche avec son temps réel et active la suivante. Si le minuteur tournait et que l'enchaînement automatique est actif, la suivante démarre." },
+  { id: "C6", group: "Minuteur", title: "Passer", detail: "Envoie la tâche en cours en fin de liste (temps conservé) et active la suivante." },
+  { id: "C7", group: "Minuteur", title: "Mode focus", detail: "Plein écran pour la liste ouverte : nom de la liste, emoji, titre, anneau, temps, contrôles, « Ensuite : »." },
+  { id: "C8", group: "Minuteur", title: "Titre de l'onglet", detail: "Affiche le minuteur le plus proche de zéro parmi les listes qui tournent, et « +N » s'il y en a d'autres." },
+  { id: "C10", group: "Minuteur", title: "Styles d'horloge", detail: "Réglage : anneau (part de la tâche restante), cadran minuteur (vraie horloge type Time Timer : cadran 60 minutes gradué, chiffres 0 à 55, la part colorée montre les minutes restantes et se replie vers 0) ou chiffres seuls. L'horloge est l'élément principal de la carte « Maintenant » (≥ 60 % de la largeur d'un téléphone) et du mode focus (≥ 75 %), avec le temps restant écrit au centre ; toucher l'horloge permet de taper le temps restant." },
+  { id: "C11", group: "Minuteur", title: "Passage automatique à la fin du temps", detail: "Réglage (désactivé par défaut) : quand le temps d'une tâche est écoulé, elle est terminée et la suivante démarre aussitôt, à l'instant exact de la fin (y compris si plusieurs tâches ont expiré pendant que l'onglet dormait)." },
+  { id: "C9", group: "Minuteur", title: "Formats d'affichage", detail: "MM:SS, H:MM:SS au-delà d'une heure, « +MM:SS » en dépassement ; durées « 25 min », « 1 h », « 1 h 05 »." },
+
+  // ---------- D. Plus tard ----------
+  { id: "D1", group: "Plus tard", title: "Déprioriser", detail: "Envoie une tâche dans « Plus tard » en un clic (bouton 🕓 de la carte ou de la carte « Maintenant »), avec pause si elle tournait et possibilité d'annuler." },
+  { id: "D2", group: "Plus tard", title: "Réactiver / supprimer", detail: "Réactiver remet la tâche en fin de la liste ouverte ; supprimer la retire." },
+
+  // ---------- E. Terminées ----------
+  { id: "E1", group: "Terminées", title: "Historique", detail: "Tâches terminées, la plus récente en haut, avec liste d'origine, temps estimé vs réel, et le total passé." },
+  { id: "E2", group: "Terminées", title: "Rouvrir / vider", detail: "Rouvrir remet la tâche dans sa liste d'origine si elle existe encore, sinon dans la liste ouverte. « Vider » efface l'historique (avec confirmation)." },
+  { id: "E4", group: "Terminées", title: "Terminées en bas de la liste", detail: "En bas de chaque liste, un interrupteur « Terminées (N) » affiche ou masque les tâches terminées de cette liste (choix mémorisé). Chacune peut être remise dans la liste en un clic." },
+  { id: "E3", group: "Terminées", title: "Célébration", detail: "Terminer la dernière tâche d'une liste affiche une célébration." },
+
+  // ---------- F. Routines ----------
+  { id: "F1", group: "Routines", title: "Créer une routine de zéro", detail: "Depuis l'onglet Routines : nom + étapes (emoji, titre, durée) ajoutées une à une, avec la même saisie rapide « Titre 15m ». Enregistrement impossible sans nom ou sans étape." },
+  { id: "F2", group: "Routines", title: "Modifier une routine", detail: "Renommer, modifier, réordonner, supprimer des étapes ; « Annuler » abandonne les modifications." },
+  { id: "F3", group: "Routines", title: "Lancer une routine", detail: "« Lancer » crée une nouvelle liste nommée comme la routine, l'ouvre et démarre la première étape. Elle tourne en parallèle des autres listes." },
+  { id: "F4", group: "Routines", title: "Charger dans la liste ouverte", detail: "Ajouter (en bas ou en haut de la liste selon le réglage « Charger une routine », en haut = juste après la tâche en cours), ou remplacer (avec confirmation intégrée à la page)." },
+  { id: "F5", group: "Routines", title: "Enregistrer une liste comme routine", detail: "Copie la liste ouverte (titres, emojis, durées) dans une nouvelle routine." },
+  { id: "F6", group: "Routines", title: "Supprimer une routine", detail: "Avec confirmation et possibilité d'annuler." },
+
+  // ---------- G. Persistance ----------
+  { id: "G1", group: "Persistance", title: "Sauvegarde locale", detail: "Chaque changement est enregistré dans le navigateur ; un rechargement restaure listes, minuteurs, routines et réglages." },
+  { id: "G2", group: "Persistance", title: "Synchronisation entre appareils", detail: "La base partagée est chargée au démarrage (jamais écrasée par un état vide) et reçoit les changements, une écriture à la fois." },
+  { id: "G3", group: "Persistance", title: "Résolution des conflits", detail: "Un état distant n'est appliqué que s'il est plus récent ; l'écho de sa propre écriture est ignoré." },
+  { id: "G4", group: "Persistance", title: "Migration", detail: "Les données v1 et v2 (une seule liste) deviennent la liste « Ma liste » sans perte ; les données invalides sont nettoyées." },
+
+  { id: "G5", group: "Persistance", title: "Exporter / importer mes données", detail: "Réglages → Sauvegarde : « Exporter » affiche toutes les données (listes, routines, historique, réglages) en texte à copier ; « Importer » accepte ce texte collé, le valide et remplace les données après confirmation (annulable). Sert à migrer vers l'appli autonome." },
+
+  // ---------- S. Appli autonome ----------
+  { id: "S1", group: "Appli autonome", title: "Compte et connexion", detail: "Hors de Claude, si Firebase est configuré : connexion par e-mail et mot de passe (création de compte, messages d'erreur en français), déconnexion dans les réglages. Sans compte, l'appli fonctionne en local." },
+  { id: "S2", group: "Appli autonome", title: "Synchronisation web ↔ Android", detail: "Les données de chaque compte sont dans un document Firestore privé (users/{uid}), avec les mêmes règles que G2/G3 : chargées au démarrage sans jamais être écrasées par un état vide, mises à jour en temps réel, le plus récent l'emporte." },
+  { id: "S3", group: "Appli autonome", title: "Installable (PWA)", detail: "Manifeste (nom, icônes, couleurs) et service worker : installable depuis le navigateur et utilisable hors ligne. Désactivé à l'intérieur de Claude." },
+  { id: "N1", group: "Appli autonome", title: "Alarmes Android téléphone verrouillé", detail: "Dans l'appli Android, une notification est programmée à l'heure exacte de fin de chaque tâche en cours (et des suivantes si le passage automatique est activé), puis reprogrammée à chaque changement (pause, ajout de temps, tâche terminée…)." },
+
+  // ---------- H. Réglages ----------
+  { id: "H1", group: "Réglages", title: "Préférences", detail: "Son on/off, enchaîner automatiquement, durée par défaut (1–600), thème auto/clair/sombre, affichage des terminées dans la liste, enchaînement au clic sur Terminé, passage automatique à la fin du temps, style d'horloge, couleur, position des routines chargées." },
+
+  // ---------- I. Clavier ----------
+  { id: "H2", group: "Réglages", title: "Couleur d'accentuation", detail: "Choix parmi plusieurs couleurs (vert, bleu, violet, rose, orange, rouge, sarcelle), adaptées au thème clair et sombre, appliquées immédiatement et mémorisées. Toute l'interface suit la couleur choisie (fonds et gris teintés, icônes) : plus aucun élément ne reste dans la couleur précédente." },
+  { id: "H3", group: "Réglages", title: "Choix du son", detail: "Cinq sons de fin de temps sobres : une ou deux notes au plus, registre médium (fréquences entre 250 Hz et 3 kHz, filtre adoucissant les aigus), parfaitement centrés (même signal dans les deux oreilles), volume modéré et homogène : carillon, cloche, bol chantant, marimba, harpe. Choisir un son le fait entendre ; le bouton « Tester » rejoue le son choisi. Les anciens choix (gong, bip) sont convertis." },
+  { id: "I1", group: "Clavier", title: "Raccourcis", detail: "N : nouvelle tâche ; Espace : lecture/pause de la liste ouverte (hors saisie) ; Échap : fermer / quitter le focus ; [ et ] : liste précédente / suivante." },
+];

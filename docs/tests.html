@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sablier — spécifications et tests</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&family=Space+Mono:wght@400;700&display=swap">
+<link rel="stylesheet" href="app.css">
+<style>
+  body{overflow:auto}
+  .wrap{max-width:760px;margin:0 auto;padding:20px 16px 40px}
+  h1{font-family:var(--font-display);font-size:20px;margin-bottom:4px}
+  .lead{color:var(--ink-muted);margin:0 0 16px;font-size:14px}
+  .totals{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px}
+  .pill{background:var(--surface);border:1px solid var(--border);border-radius:999px;padding:6px 12px;font-size:13px;font-weight:700}
+  .pill.ok{color:var(--accent)} .pill.ko{color:var(--danger)}
+  h2{font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-muted);margin:22px 4px 8px}
+  .spec{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:8px}
+  .spec-head{display:flex;gap:10px;align-items:baseline}
+  .sid{font-family:var(--font-display);font-weight:700;color:var(--accent);flex:0 0 auto}
+  .spec.ko .sid{color:var(--danger)}
+  .stitle{font-weight:800}
+  .badge{margin-left:auto;font-size:12px;font-family:var(--font-display);white-space:nowrap}
+  .sdetail{color:var(--ink-muted);font-size:13.5px;margin:4px 0 6px}
+  ul.tests{margin:0;padding-left:18px;font-size:12.5px}
+  ul.tests li.ko{color:var(--danger)}
+  .kind{font-family:var(--font-display);font-size:10.5px;color:var(--ink-muted);margin-right:4px}
+  a{color:var(--accent)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <a href="index.html">← Retour à Sablier</a>
+  <h1 style="margin-top:12px">Spécifications &amp; tests</h1>
+  <p class="lead">Chaque fonctionnalité est spécifiée ci-dessous et couverte par des tests. Les tests unitaires du cœur métier s'exécutent <strong>en direct dans ce navigateur</strong> ; les tests bout en bout (navigateur piloté par Playwright) affichent leur dernier résultat.</p>
+  <div class="totals" id="totals"></div>
+  <div id="out">Exécution des tests…</div>
+</div>
+<script type="module">
+import { SPECS } from "./specs.js";
+import { runAll } from "./testkit.js";
+import "./test/core.test.js";
+
+const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;");
+const unit = await runAll();
+let e2e = [], e2eDate = null;
+try { const r = await (await fetch("e2e-results.json")).json(); e2e = r.results; e2eDate = r.ranAt; } catch {}
+const all = [...unit.map((r) => ({ ...r, kind: "unitaire" })), ...e2e.map((r) => ({ ...r, kind: "E2E" }))];
+
+const uOk = unit.filter((r) => r.ok).length, eOk = e2e.filter((r) => r.ok).length;
+document.getElementById("totals").innerHTML =
+  `<span class="pill ${uOk === unit.length ? "ok" : "ko"}">Unitaires : ${uOk}/${unit.length}</span>` +
+  `<span class="pill ${eOk === e2e.length ? "ok" : "ko"}">E2E : ${eOk}/${e2e.length}${e2eDate ? " · " + new Date(e2eDate).toLocaleDateString("fr-FR") : ""}</span>` +
+  `<span class="pill">${SPECS.length} spécifications</span>`;
+
+let html = "", group = null;
+for (const s of SPECS) {
+  if (s.group !== group) { group = s.group; html += `<h2>${esc(group)}</h2>`; }
+  const ts = all.filter((r) => r.specId === s.id);
+  const ko = ts.some((r) => !r.ok);
+  html += `<div class="spec ${ko || !ts.length ? "ko" : ""}"><div class="spec-head"><span class="sid">${s.id}</span><span class="stitle">${esc(s.title)}</span>
+    <span class="badge">${ts.length ? (ko ? "✗ " : "✓ ") + ts.filter((r) => r.ok).length + "/" + ts.length : "non testée"}</span></div>
+    <p class="sdetail">${esc(s.detail)}</p>
+    <ul class="tests">${ts.map((r) => `<li class="${r.ok ? "" : "ko"}"><span class="kind">${r.kind}</span>${r.ok ? "✓" : "✗"} ${esc(r.name)}${r.ok ? "" : " — " + esc(r.error || "")}</li>`).join("")}</ul></div>`;
+}
+document.getElementById("out").innerHTML = html;
+</script>
+</body>
+</html>

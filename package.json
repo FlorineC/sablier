@@ -1,0 +1,21 @@
+{
+  "name": "sablier",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Sablier — listes de tâches minutées (web + Android)",
+  "scripts": {
+    "test": "node docs/test/run-unit.mjs",
+    "test:e2e": "node docs/test/e2e.mjs",
+    "android:sync": "cap sync android",
+    "android:open": "cap open android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.6.2",
+    "@capacitor/core": "^8.6.2",
+    "@capacitor/local-notifications": "^8.3.1"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.6.2",
+    "playwright": "^1.65.1"
+  }
+}
