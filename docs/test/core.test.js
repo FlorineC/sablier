@@ -824,3 +824,61 @@ spec("G5", "import : texte valide → état normalisé ; texte invalide → null
   expect(C.importData("[1,2]")).toBeNull();
   expect(C.importData("{}")).toBeNull();
 });
+
+// ================================================================ v11
+spec("S1", "configuration Firebase collée depuis la console", () => {
+  const snippet = `// Import the functions you need from the SDKs you need
+import { initializeApp } from "firebase/app";
+const firebaseConfig = {
+  apiKey: "AIzaSyB-test_123",
+  authDomain: "mon-sablier.firebaseapp.com",
+  projectId: "mon-sablier",
+  storageBucket: "mon-sablier.firebasestorage.app",
+  messagingSenderId: "1234567890",
+  appId: "1:1234567890:web:abcdef"
+};
+const app = initializeApp(firebaseConfig);`;
+  expect(C.parseFirebaseConfig(snippet)).toEqual({
+    apiKey: "AIzaSyB-test_123", authDomain: "mon-sablier.firebaseapp.com", projectId: "mon-sablier",
+    storageBucket: "mon-sablier.firebasestorage.app", messagingSenderId: "1234567890", appId: "1:1234567890:web:abcdef",
+  });
+  expect(C.parseFirebaseConfig('{"apiKey":"k","projectId":"p","appId":"a"}')).toEqual({ apiKey: "k", projectId: "p", appId: "a" });
+  expect(C.parseFirebaseConfig("apiKey: 'k', projectId: 'p'")).toEqual({ apiKey: "k", projectId: "p" });
+  expect(C.parseFirebaseConfig("bonjour")).toBeNull();
+  expect(C.parseFirebaseConfig('{ apiKey: "k" }')).toBeNull(); // projectId manquant
+});
+spec("A5", "recherche d'emoji : mots français, sans accents, libellés et mots-clés", () => {
+  const data = [["☕", "boisson chaude", "boisson café caféine matin thé", 4], ["🎯", "dans le mille", "cible fléchettes jeu", 6], ["🐈", "chat", "animal chat", 3]];
+  expect(C.searchEmoji(data, "cafe").map((x) => x[0])).toEqual(["☕"]);
+  expect(C.searchEmoji(data, "CIBLE").map((x) => x[0])).toEqual(["🎯"]);
+  expect(C.searchEmoji(data, "cha").map((x) => x[0])).toEqual(["🐈", "☕"]); // libellé exact/début d'abord
+  expect(C.searchEmoji(data, "").length).toBe(3);
+});
+
+// ================================================================ v13
+spec("C12", "remettre le temps à zéro : tâche en cours qui tourne", () => {
+  let s = withTasks({ title: "A", minutes: 20 }, "B");
+  s = C.startTask(s, L(s), null, T0);
+  s = C.checkTimeUp(s, T0 + min(25)).state;
+  s = C.resetTime(s, tid(s, 0), T0 + min(25));
+  expect(C.remainingSec(s, tid(s, 0), T0 + min(25))).toBe(1200);
+  expect(C.isRunning(s, L(s))).toBe(true);
+  expect(C.remainingSec(s, tid(s, 0), T0 + min(26))).toBe(1140);
+  expect(C.checkTimeUp(s, T0 + min(46)).fired).toHaveLength(1); // signal réarmé
+});
+spec("C12", "remettre à zéro : en pause, durée non entière arrondie, tâche de la file", () => {
+  let s = withTasks({ title: "A", minutes: 20 }, { title: "B", minutes: 10 });
+  s = C.startTask(s, L(s), null, T0);
+  s = C.setRemainingSec(s, L(s), 1182, T0 + sec(18)); // durée devient fractionnaire
+  s = C.pauseTask(s, L(s), T0 + min(2));
+  s = C.resetTime(s, tid(s, 0), T0 + min(3));
+  expect(C.isRunning(s, L(s))).toBe(false);
+  expect(tasks(s)[0].minutes).toBe(20);
+  expect(C.remainingSec(s, tid(s, 0), T0 + min(9))).toBe(1200);
+  s = C.startTask(s, L(s), tid(s, 1), T0 + min(10));
+  s = C.resetTime(s, tid(s, 1), T0 + min(12)); // B tourne
+  s = C.resetTime(s, tid(s, 1), T0 + min(12));
+  const a = tasks(s).find((t) => t.title === "A");
+  expect(a.spentSec).toBe(0);
+  expect(C.resetTime(s, "nope", T0)).toBe(s);
+});

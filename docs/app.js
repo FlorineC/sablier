@@ -35,6 +35,7 @@ const ICONS = {
   dup: ["M8 8h11v11H8zM5 16V5h11"],
   sound: ["M4 9v6h4l5 4V5L8 9zM16.5 8.5a5 5 0 0 1 0 7"],
   edit: ["M4 20h4L19 9l-4-4L4 16z"],
+  reset: ["M3.5 12a8.5 8.5 0 1 0 2.6-6.1M3.5 4v4.5H8"],
 };
 function icon(name) {
   const [d, fill, sw] = ICONS[name] || ICONS.more;
@@ -127,7 +128,8 @@ function commit(next, opts = {}) {
 // Trois modes : base de l'artifact (dans Claude), Firestore (appli autonome avec compte), local seul.
 // Les deux bases exposent le même petit contrat : onSnapshot(next, err) et set(data).
 let docRef = null, remoteReady = false, writing = false, writeQueued = false, writeTimer = null, unsubRemote = null;
-let fb = null, fbAuth = null, authSkipped = false;
+let fb = null, fbAuth = null, authSkipped = false, fbStatus = "claude", fbUser = null;
+const FB_KEY = "sablier.firebaseConfig";
 
 async function initRemote() {
   const cl = window.claude;
@@ -138,8 +140,12 @@ async function initRemote() {
       try { connectRemote(db.doc("app/state")); return; } catch { /* repli local */ }
     }
   }
-  const cfg = await firebaseConfig();
+  // Hors de Claude : la section « Compte & synchronisation » est toujours visible.
+  $("accountGroup").hidden = false;
+  const { cfg, error } = await firebaseConfig();
   if (cfg) { await initFirebase(cfg); return; }
+  fbStatus = error ? "invalid" : "none";
+  renderAccount(null);
   setSync("local");
 }
 function connectRemote(ref) {
@@ -155,17 +161,28 @@ function disconnectRemote() {
 }
 
 // ---------- Firebase (appli autonome)
+// Ordre : configuration collée dans l'appli (par appareil), puis fichier firebase-config.js.
 async function firebaseConfig() {
-  if (window.__SABLIER_FIREBASE_CONFIG) return window.__SABLIER_FIREBASE_CONFIG;
-  try { const m = await import("./firebase-config.js"); return m.default || null; } catch { return null; }
+  if (window.__SABLIER_FIREBASE_CONFIG) return { cfg: window.__SABLIER_FIREBASE_CONFIG };
+  try { const saved = JSON.parse(localStorage.getItem(FB_KEY)); if (saved && saved.apiKey) return { cfg: saved }; } catch { /* rien d'enregistré */ }
+  try {
+    const m = await import("./firebase-config.js");
+    const cfg = m.default || m.firebaseConfig || null;
+    if (cfg && !(cfg.apiKey && cfg.projectId)) return { cfg: null, error: true };
+    return { cfg };
+  } catch { return { cfg: null, error: true }; }
 }
 async function initFirebase(cfg) {
   try { fb = window.__SABLIER_FIREBASE_MOCK || await import("./vendor/firebase.js"); } catch { setSync("local"); return; }
-  const app = fb.initializeApp(cfg);
-  fbAuth = fb.getAuth(app);
-  const db = fb.getFirestore(app);
-  $("accountGroup").hidden = false;
+  let app, db;
+  try {
+    app = fb.initializeApp(cfg);
+    fbAuth = fb.getAuth(app);
+    db = fb.getFirestore(app);
+  } catch { fbStatus = "invalid"; renderAccount(null); setSync("local"); return; }
+  fbStatus = "ready";
   fb.onAuthStateChanged(fbAuth, (user) => {
+    fbUser = user;
     renderAccount(user);
     if (user) {
       closeAuth();
@@ -203,10 +220,41 @@ async function authAction(kind) {
   }
 }
 function renderAccount(user) {
-  $("accountEmail").textContent = user ? user.email : "Non connectée — données sur cet appareil seulement";
+  const msg = user ? user.email
+    : fbStatus === "none" ? "Synchronisation non configurée — tes données restent sur cet appareil."
+    : fbStatus === "invalid" ? "Configuration Firebase invalide (firebase-config.js). Colle-la avec « Configurer Firebase »."
+    : "Non connectée — données sur cet appareil seulement.";
+  $("accountEmail").textContent = msg;
   $("signOut").hidden = !user;
-  $("signIn").hidden = !!user;
+  $("signIn").hidden = !!user || fbStatus !== "ready";
+  $("fbSetup").textContent = fbStatus === "ready" ? "Changer la configuration" : "Configurer Firebase";
 }
+// Coller la configuration Firebase dans l'appli (pas besoin de modifier le code).
+$("fbSetup").addEventListener("click", () => {
+  closeSheets();
+  let saved = null;
+  try { saved = localStorage.getItem(FB_KEY); } catch { /* indisponible */ }
+  $("fbConfigText").value = "";
+  $("fbConfigError").hidden = true;
+  $("fbConfigClear").hidden = !saved;
+  $("fbConfigSheet").hidden = false;
+  $("fbConfigText").focus();
+});
+$("fbConfigClose").addEventListener("click", () => { $("fbConfigSheet").hidden = true; });
+$("fbConfigSave").addEventListener("click", async () => {
+  const cfg = C.parseFirebaseConfig($("fbConfigText").value);
+  if (!cfg) { $("fbConfigError").hidden = false; return; }
+  try { localStorage.setItem(FB_KEY, JSON.stringify(cfg)); } catch { /* indisponible */ }
+  $("fbConfigSheet").hidden = true;
+  if (fb && fbAuth) { location.reload(); return; } // une autre configuration était active
+  authSkipped = false;
+  await initFirebase(cfg);
+});
+$("fbConfigClear").addEventListener("click", () => { try { localStorage.removeItem(FB_KEY); } catch { /* indisponible */ } location.reload(); });
+$("syncNote").addEventListener("click", () => {
+  if (fbStatus === "ready" && !fbUser) { authSkipped = false; openAuth(); }
+  else if (fbStatus !== "claude") go("settings");
+});
 $("authLogin").addEventListener("click", () => authAction("login"));
 $("authCreate").addEventListener("click", () => authAction("create"));
 $("authPassword").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); authAction("login"); } });
@@ -310,22 +358,25 @@ function queueCard(t, i, n, minIdx) {
   <span class="task-eta"></span>
   <div class="move-col">
     <button data-action="top" title="Tout en haut" aria-label="Tout en haut"${idx <= minIdx ? " disabled" : ""}>${icon("top")}</button>
+    <button data-action="up" title="Monter" aria-label="Monter"${idx <= minIdx ? " disabled" : ""}>${icon("up")}</button>
+    <button data-action="down" title="Descendre" aria-label="Descendre"${idx >= n - 1 ? " disabled" : ""}>${icon("down")}</button>
     <button data-action="bottom" title="Tout en bas" aria-label="Tout en bas"${idx >= n - 1 ? " disabled" : ""}>${icon("bottom")}</button>
   </div>
   <div class="task-body">
     <div class="task-row">
-      <button class="drag-handle" data-action="drag" aria-label="Glisser pour réordonner" title="Glisser pour réordonner">${icon("grip")}</button>
-      <span class="task-num">${i + 2}</span>
-      <span class="task-emoji">${esc(t.emoji)}</span>
-      <div class="task-main"><input class="task-title" data-field="title" value="${esc(t.title)}" aria-label="Titre"></div>
+      <span class="task-emoji drag-handle" data-action="drag" title="Glisser pour réordonner" aria-label="Position ${i + 2} — glisser pour réordonner">${esc(t.emoji)}</span>
+      <div class="task-main">
+        <input class="task-title" data-field="title" value="${esc(t.title)}" aria-label="Titre">
+        <div class="task-meta">
+          <label class="dur"><input class="task-minutes" data-field="minutes" type="number" inputmode="numeric" min="1" max="600" value="${Math.round(t.minutes)}" aria-label="Durée en minutes"><span>min</span></label>
+          <span class="task-timer"></span>
+          <button class="mini-reset" data-action="reset" title="Remettre le temps à zéro" aria-label="Remettre le temps à zéro" hidden>${icon("reset")}</button>
+        </div>
+      </div>
       <button class="play-mini" data-action="play" aria-label="Démarrer cette tâche" title="Démarrer">${icon("play")}</button>
     </div>
-    <div class="task-sub">
-      <label class="min-chip"><input class="task-minutes" data-field="minutes" type="number" inputmode="numeric" min="1" max="600" value="${Math.round(t.minutes)}" aria-label="Durée en minutes"><span>min</span></label>
-      <span class="task-timer"></span>
-      <span class="quick-acts">
-        ${act("later", "later", "Plus tard")}${act("complete", "check", "Fait", "ok")}${act("delete", "trash", "Suppr.", "danger")}${act("menu", "edit", "Modifier")}
-      </span>
+    <div class="quick-acts">
+      ${act("later", "later", "Plus tard")}${act("complete", "check", "Fait", "ok")}${act("delete", "trash", "Suppr.", "danger")}${act("menu", "edit", "Modifier")}
     </div>
   </div>
 </li>`;
@@ -485,6 +536,7 @@ function tick(fromRender) {
     setText($("nowTitle"), head.title);
     setText($("nowPlanned"), `prévu ${C.fmtDuration(head.minutes)}`);
     setText($("nowInfo"), el > 0 ? `${fmtSpent(el)} passées` : "");
+    $("nowReset").hidden = el <= 0;
     const slot = sch.find((x) => x.taskId === head.id);
     setText($("nowEta"), slot ? `fin ≈ ${C.fmtClock(slot.endAtMs)}` : "");
     const style = state.settings.clockStyle;
@@ -511,6 +563,8 @@ function tick(fromRender) {
     const task = list.tasks.find((x) => x.id === li.dataset.id);
     if (!task) return;
     setText(li.querySelector(".task-timer"), task.spentSec > 0 ? C.fmtTimer(C.remainingSec(state, task.id, t)) : "");
+    const rb = li.querySelector(".mini-reset");
+    if (rb && rb.hidden !== !(task.spentSec > 0)) rb.hidden = !(task.spentSec > 0);
     const slot = sch.find((x) => x.taskId === task.id);
     setText(li.querySelector(".task-eta"), slot ? `${C.fmtClock(slot.startAtMs)} → ${C.fmtClock(slot.endAtMs)}` : "");
   });
@@ -551,6 +605,7 @@ function renderFocus(list, t) {
   const running = C.isRunning(state, list.id);
   const rem = C.remainingSec(state, act.id, t);
   setText($("focusList"), list.name);
+  $("focusReset").hidden = C.elapsedSec(state, act.id, t) <= 0;
   setText($("focusEmoji"), act.emoji);
   setText($("focusTitle"), act.title);
   setText($("focusTimer"), C.fmtTimer(rem));
@@ -757,6 +812,11 @@ $("nowFocus").addEventListener("click", () => {
 $("nowMinus5").addEventListener("click", () => commit(C.adjustTime(state, cur().id, -5)));
 $("nowPlus1").addEventListener("click", () => commit(C.adjustTime(state, cur().id, 1)));
 $("nowPlus5").addEventListener("click", () => commit(C.adjustTime(state, cur().id, 5)));
+function resetTask(id) {
+  if (id) commit(C.resetTime(state, id, now()), { undoable: true, toast: "Temps remis à zéro" });
+}
+$("nowReset").addEventListener("click", () => { const h = cur().tasks[0]; if (h) resetTask(h.id); });
+$("focusReset").addEventListener("click", () => { const a = C.activeTask(state, cur().id); if (a) resetTask(a.id); });
 $("nowLater").addEventListener("click", () => { const h = cur().tasks[0]; if (h) sendLater(h.id); });
 
 function sendLater(id) {
@@ -851,6 +911,9 @@ $("taskList").addEventListener("click", (e) => {
   if (b.dataset.action === "menu") openTaskSheet(id);
   if (b.dataset.action === "top") commit(C.moveTaskToEdge(state, id, "top"));
   if (b.dataset.action === "bottom") commit(C.moveTaskToEdge(state, id, "bottom"));
+  if (b.dataset.action === "up") commit(C.moveTask(state, id, -1));
+  if (b.dataset.action === "reset") resetTask(id);
+  if (b.dataset.action === "down") commit(C.moveTask(state, id, 1));
   if (b.dataset.action === "later") sendLater(id);
   if (b.dataset.action === "complete") completeIn(cur().id, id);
   if (b.dataset.action === "delete") {
@@ -885,13 +948,15 @@ $("taskList").addEventListener("pointerdown", (e) => {
   const h = e.target.closest(".drag-handle");
   if (!h) return;
   const li = h.closest(".task-card");
-  drag = { li, pointerId: e.pointerId };
+  drag = { li, pointerId: e.pointerId, y0: e.clientY, moved: false };
   li.classList.add("dragging");
   try { h.setPointerCapture(e.pointerId); } catch { /* ignore */ }
   e.preventDefault();
 });
 window.addEventListener("pointermove", (e) => {
   if (!drag || e.pointerId !== drag.pointerId) return;
+  if (!drag.moved && Math.abs(e.clientY - drag.y0) < 6) return; // simple toucher, pas encore un glisser
+  drag.moved = true;
   // défilement automatique près des bords pendant le glisser
   const mr = $("main").getBoundingClientRect();
   if (e.clientY < mr.top + 56) $("main").scrollTop -= 14;
@@ -912,10 +977,11 @@ function endDrag(e) {
   if (!drag || (e && e.pointerId !== drag.pointerId)) return;
   const l = cur();
   const ids = (l.tasks[0] ? [l.tasks[0].id] : []).concat([...$("taskList").children].map((x) => x.dataset.id));
-  const { li, promote } = drag;
+  const { li, promote, moved } = drag;
   li.classList.remove("dragging");
   $("nowCard").classList.remove("drop-target");
   drag = null;
+  if (!moved) { openTaskSheet(li.dataset.id, { emoji: true }); return; } // toucher l'emoji = le changer
   const next = promote ? C.promoteTask(state, l.id, li.dataset.id, now()) : C.reorderTasks(state, l.id, ids);
   if (!commit(next)) render();
 }
@@ -923,13 +989,56 @@ window.addEventListener("pointerup", endDrag);
 window.addEventListener("pointercancel", endDrag);
 
 // ------------------------------------------------------------ menu d'une tâche
-$("tsEmojiGrid").innerHTML = EMOJI_CHOICES.map((e) => `<button type="button" data-emoji="${e}">${e}</button>`).join("");
+// Sélecteur d'emoji : ≈ 1 800 emojis (données françaises chargées à la demande), catégories, recherche, récents.
+const EMOJI_GROUPS = [[0, "😀", "Smileys"], [1, "🧑", "Personnes"], [3, "🐱", "Animaux et nature"], [4, "🍔", "Nourriture"],
+  [5, "✈️", "Voyages et lieux"], [6, "⚽", "Activités"], [7, "💡", "Objets"], [8, "❤️", "Symboles"], [9, "🏁", "Drapeaux"]];
+let emojiData = null, emojiLoading = null, emojiGroup = 7;
+function loadEmojiData() {
+  if (!emojiLoading) emojiLoading = fetch("vendor/emoji-fr.json").then((r) => r.json()).then((d) => (emojiData = d))
+    .catch(() => (emojiData = EMOJI_CHOICES.map((e) => [e, "", "", 7])));
+  return emojiLoading;
+}
+function recentEmoji() { try { return JSON.parse(localStorage.getItem("sablier.recentEmoji")) || []; } catch { return []; } }
+function pushRecent(e) {
+  const r = [e, ...recentEmoji().filter((x) => x !== e)].slice(0, 16);
+  try { localStorage.setItem("sablier.recentEmoji", JSON.stringify(r)); } catch { /* stockage indisponible */ }
+}
+const emojiBtn = (e, label) => `<button type="button" class="emoji-opt${e === sheetEmoji ? " sel" : ""}" data-emoji="${esc(e)}" title="${esc(label || "")}" aria-label="${esc(label || e)}">${esc(e)}</button>`;
+$("emojiCats").innerHTML = EMOJI_GROUPS.map(([g, e, name]) => `<button type="button" class="emoji-cat" data-group="${g}" role="tab" title="${name}" aria-label="${name}">${e}</button>`).join("");
+function renderEmojiGrid() {
+  const q = $("emojiSearch").value;
+  $("emojiCats").querySelectorAll(".emoji-cat").forEach((b) => b.setAttribute("aria-selected", String(!q.trim() && +b.dataset.group === emojiGroup)));
+  if (!emojiData) { $("emojiGrid").innerHTML = `<p class="emoji-empty">Chargement…</p>`; return; }
+  const rows = q.trim() ? C.searchEmoji(emojiData, q).slice(0, 240) : emojiData.filter((r) => r[3] === emojiGroup);
+  $("emojiGrid").innerHTML = rows.length ? rows.map((r) => emojiBtn(r[0], r[1])).join("") : `<p class="emoji-empty">Aucun emoji pour « ${esc(q)} »</p>`;
+  $("emojiGrid").scrollTop = 0;
+}
+function renderRecent() {
+  const r = recentEmoji();
+  $("emojiRecentWrap").hidden = r.length === 0;
+  $("emojiRecent").innerHTML = r.map((e) => emojiBtn(e)).join("");
+}
 function setSheetEmoji(e) {
   sheetEmoji = e;
   $("tsEmojiPreview").textContent = e;
-  $("tsEmojiGrid").querySelectorAll("button").forEach((b) => b.classList.toggle("sel", b.dataset.emoji === e));
+  document.querySelectorAll("#taskSheet .emoji-opt").forEach((b) => b.classList.toggle("sel", b.dataset.emoji === e));
 }
-function openTaskSheet(id) {
+$("emojiCats").addEventListener("click", (e) => {
+  const b = e.target.closest(".emoji-cat"); if (!b) return;
+  emojiGroup = +b.dataset.group; $("emojiSearch").value = ""; renderEmojiGrid();
+});
+$("emojiSearch").addEventListener("input", renderEmojiGrid);
+$("emojiSearch").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); const first = $("emojiGrid").querySelector(".emoji-opt"); if (first) setSheetEmoji(first.dataset.emoji); } });
+for (const id of ["emojiGrid", "emojiRecent"]) {
+  $(id).addEventListener("click", (e) => { const b = e.target.closest(".emoji-opt"); if (b) setSheetEmoji(b.dataset.emoji); });
+}
+function showPicker(show) {
+  $("emojiPicker").hidden = !show;
+  $("tsEmojiPreview").setAttribute("aria-expanded", String(show));
+  if (show) { renderRecent(); renderEmojiGrid(); loadEmojiData().then(() => { if (!$("emojiPicker").hidden) renderEmojiGrid(); }); }
+}
+$("tsEmojiPreview").addEventListener("click", () => showPicker($("emojiPicker").hidden));
+function openTaskSheet(id, { emoji = false } = {}) {
   const l = listOf(id);
   if (!l) return;
   const idx = l.tasks.findIndex((t) => t.id === id);
@@ -938,25 +1047,31 @@ function openTaskSheet(id) {
   sheetTaskId = id;
   $("tsTitle").value = t.title;
   $("tsMinutes").value = Math.round(t.minutes);
-  setSheetEmoji(t.emoji);
+  sheetEmoji = t.emoji;
+  $("tsEmojiPreview").textContent = t.emoji;
+  $("emojiSearch").value = "";
+  const found = emojiData && emojiData.find((r) => r[0] === t.emoji);
+  if (found) emojiGroup = found[3];
+  loadEmojiData().then(() => { if (sheetTaskId === id) { const f = emojiData.find((r) => r[0] === t.emoji); if (f && !$("emojiSearch").value) emojiGroup = f[3]; if (!$("emojiPicker").hidden) renderEmojiGrid(); } });
+  showPicker(emoji);
   const minIdx = l.active ? 1 : 0;
-  $("taskSheet").querySelector('[data-ts="up"]').disabled = idx - 1 < minIdx;
-  $("taskSheet").querySelector('[data-ts="down"]').disabled = idx < minIdx || idx + 1 >= l.tasks.length;
-  $("taskSheet").querySelector('[data-ts="top"]').disabled = idx <= minIdx;
-  $("taskSheet").querySelector('[data-ts="bottom"]').disabled = idx < minIdx || idx + 1 >= l.tasks.length;
+  // Supprimer n'est dans le menu que pour la tâche en tête (les autres ont le bouton sur leur carte).
+  $("taskSheet").querySelector('[data-ts="delete"]').hidden = idx !== 0;
   const others = state.lists.filter((x) => x.id !== l.id);
   $("tsMove").hidden = others.length === 0;
   $("tsMove").innerHTML = others.length ? `<span>Déplacer vers</span>` + others.map((x) => `<button data-ts="move" data-list="${esc(x.id)}">${esc(x.name)}</button>`).join("") : "";
   openSheet("taskSheet");
 }
-$("tsEmojiGrid").addEventListener("click", (e) => { const b = e.target.closest("[data-emoji]"); if (b) setSheetEmoji(b.dataset.emoji); });
 $("tsEmojiAuto").addEventListener("click", () => setSheetEmoji(C.suggestEmoji($("tsTitle").value)));
+$("nowEmoji").addEventListener("click", () => { const h = cur().tasks[0]; if (h) openTaskSheet(h.id, { emoji: true }); });
+$("nowEmoji").addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); $("nowEmoji").click(); } });
 $("tsClose").addEventListener("click", closeSheets);
 function saveTaskSheet() {
   const id = sheetTaskId;
   if (!id) return;
   const l = listOf(id), t = l && l.tasks.find((x) => x.id === id);
   const patch = { title: $("tsTitle").value, emoji: sheetEmoji };
+  if (t && sheetEmoji !== t.emoji) pushRecent(sheetEmoji);
   if (!t || String(Math.round(t.minutes)) !== $("tsMinutes").value) patch.minutes = $("tsMinutes").value;
   closeSheets();
   commit(C.updateTask(state, id, patch));
@@ -970,14 +1085,8 @@ $("taskSheet").addEventListener("click", (e) => {
   if (!t) return;
   closeSheets();
   switch (b.dataset.ts) {
-    case "top": commit(C.moveTaskToEdge(state, id, "top")); break;
-    case "bottom": commit(C.moveTaskToEdge(state, id, "bottom")); break;
-    case "up": commit(C.moveTask(state, id, -1)); break;
-    case "down": commit(C.moveTask(state, id, 1)); break;
     case "dup": commit(C.duplicateTask(state, id)); break;
-    case "later": sendLater(id); break;
     case "delete": commit(C.deleteTask(state, id), { undoable: true, toast: `« ${t.title} » supprimée` }); break;
-    case "complete": completeIn(l.id, id); break;
     case "move": {
       const target = C.getList(state, b.dataset.list);
       commit(C.moveTaskToList(state, id, b.dataset.list, now()), { undoable: true, toast: `« ${t.title} » → ${target ? target.name : ""}` });
@@ -1270,6 +1379,7 @@ document.addEventListener("visibilitychange", () => { if (!document.hidden) tick
 initRemote();
 setupAlarms();
 syncAlarms(state, now());
+setTimeout(loadEmojiData, 1500);
 // Appli installable (hors de Claude et hors appli Android) : service worker pour le hors-ligne.
 if ("serviceWorker" in navigator && !window.claude && !isNative() && location.protocol.startsWith("http")) {
   navigator.serviceWorker.register("sw.js").catch(() => {});

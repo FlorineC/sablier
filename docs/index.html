@@ -15,7 +15,7 @@
 <div id="app">
   <header class="topbar">
     <h1><span class="logo" aria-hidden="true">⏳</span> Sablier</h1>
-    <span class="sync-note" id="syncNote"></span>
+    <button class="sync-note" id="syncNote" title="Synchronisation"></button>
   </header>
 
   <div class="listbar-wrap" id="listBarWrap">
@@ -48,7 +48,7 @@
           </div>
         </div>
         <div class="now-body">
-          <div class="now-emoji" id="nowEmoji"></div>
+          <div class="now-emoji" id="nowEmoji" role="button" tabindex="0" title="Changer l'emoji" aria-label="Changer l'emoji"></div>
           <div class="now-text"><h2 class="now-title" id="nowTitle"></h2>
             <div class="now-meta" id="nowMeta"><span id="nowPlanned"></span><span id="nowInfo"></span></div>
           </div>
@@ -82,6 +82,7 @@
         </div>
         <div class="now-actions">
           <button class="big-btn" id="nowToggle"></button>
+          <button class="round-btn" id="nowReset" aria-label="Remettre le temps à zéro" title="Remettre le temps à zéro" data-icon="reset" hidden></button>
           <button class="round-btn" id="nowDone" aria-label="Terminer" title="Terminer" data-icon="check"></button>
           <button class="round-btn" id="nowFocus" aria-label="Mode focus" title="Mode focus" data-icon="focus"></button>
         </div>
@@ -177,9 +178,10 @@
         <div id="accountGroup" class="settings" hidden>
           <p class="set-group">Compte &amp; synchronisation</p>
           <div class="setting column"><span id="accountEmail"></span>
-            <div class="setting-ctrl" style="margin-top:10px">
+            <div class="setting-ctrl wrap" style="margin-top:10px">
+              <button class="btn primary" id="signIn" hidden>Se connecter / créer un compte</button>
               <button class="btn ghost" id="signOut" hidden>Se déconnecter</button>
-              <button class="btn primary" id="signIn" hidden>Se connecter</button>
+              <button class="btn ghost" id="fbSetup">Configurer Firebase</button>
             </div>
           </div>
         </div>
@@ -217,6 +219,7 @@
         <button id="focusPlus5">+5 min</button>
       </div>
       <div class="focus-actions">
+        <button class="round-btn" id="focusReset" aria-label="Remettre le temps à zéro" title="Remettre le temps à zéro" data-icon="reset" hidden></button>
         <button class="round-btn" id="focusSkip" aria-label="Passer" title="Passer" data-icon="skip"></button>
         <button class="big-btn" id="focusToggle"></button>
         <button class="round-btn accent" id="focusDone" aria-label="Terminé" title="Terminé" data-icon="check"></button>
@@ -243,23 +246,22 @@
     <div class="grabber" aria-hidden="true"></div>
     <div class="sheet-head"><h3>Modifier la tâche</h3><button class="icon-btn" id="tsClose" aria-label="Fermer" data-icon="x"></button></div>
     <div class="ts-edit">
-      <div class="emoji-preview" id="tsEmojiPreview"></div>
+      <button type="button" class="emoji-preview" id="tsEmojiPreview" aria-label="Changer l'emoji" aria-expanded="false" title="Changer l'emoji"></button>
       <input type="text" id="tsTitle" aria-label="Titre">
       <label class="min-chip big"><input type="number" id="tsMinutes" min="1" max="600" inputmode="numeric" aria-label="Durée"><span>min</span></label>
     </div>
-    <div class="emoji-grid" id="tsEmojiGrid"></div>
-    <div class="sheet-actions">
-      <button class="btn ghost" id="tsEmojiAuto">✨ Emoji auto</button>
-      <button class="btn primary" id="tsSave">Enregistrer</button>
+    <div class="emoji-picker" id="emojiPicker" hidden>
+      <div class="emoji-search-row">
+        <input type="search" id="emojiSearch" placeholder="Chercher un emoji : café, chat, sport…" autocomplete="off" aria-label="Chercher un emoji">
+        <button class="btn ghost" id="tsEmojiAuto" title="Choisir automatiquement d'après le titre">✨ Auto</button>
+      </div>
+      <div class="emoji-recent" id="emojiRecentWrap" hidden><span>Récents</span><div id="emojiRecent"></div></div>
+      <div class="emoji-cats" id="emojiCats" role="tablist" aria-label="Catégories d'emoji"></div>
+      <div class="emoji-grid" id="emojiGrid" role="listbox" aria-label="Emojis"></div>
     </div>
+    <button class="btn primary block" id="tsSave">Enregistrer</button>
     <div class="ts-actions">
-      <button data-ts="top" data-icon="top"><span>Tout en haut</span></button>
-      <button data-ts="up" data-icon="up"><span>Monter</span></button>
-      <button data-ts="down" data-icon="down"><span>Descendre</span></button>
-      <button data-ts="bottom" data-icon="bottom"><span>Tout en bas</span></button>
-      <button data-ts="complete" data-icon="check"><span>Terminer</span></button>
       <button data-ts="dup" data-icon="dup"><span>Dupliquer</span></button>
-      <button data-ts="later" data-icon="later"><span>Plus tard</span></button>
       <button data-ts="delete" class="danger" data-icon="trash"><span>Supprimer</span></button>
     </div>
     <div class="ts-move" id="tsMove"></div>
@@ -301,6 +303,18 @@
     <p class="error" id="dataError" hidden>Ce texte ne ressemble pas à une sauvegarde de Sablier.</p>
     <button class="btn primary block" id="dataCopy">Copier</button>
     <button class="btn primary block" id="dataApply" hidden>Importer ces données</button>
+  </div>
+</div>
+
+<div class="scrim" id="fbConfigSheet" hidden>
+  <div class="sheet" role="dialog" aria-labelledby="fbConfigTitle">
+    <div class="grabber" aria-hidden="true"></div>
+    <div class="sheet-head"><h3 id="fbConfigTitle">Configurer la synchronisation</h3><button class="icon-btn" id="fbConfigClose" aria-label="Fermer" data-icon="x"></button></div>
+    <p class="sheet-note">Console Firebase → ⚙️ Paramètres du projet → Vos applications → ton appli Web → « Configuration ». Copie tout le bloc <code>firebaseConfig</code> et colle-le ici (à faire une fois sur chaque appareil).</p>
+    <textarea id="fbConfigText" class="data-text" spellcheck="false" autocomplete="off" placeholder="const firebaseConfig = { apiKey: &quot;…&quot;, … };" aria-label="Configuration Firebase"></textarea>
+    <p class="error" id="fbConfigError" hidden>Configuration non reconnue : il faut au moins apiKey et projectId.</p>
+    <button class="btn primary block" id="fbConfigSave">Enregistrer et se connecter</button>
+    <button class="back-btn" id="fbConfigClear" style="align-self:center" hidden>Oublier la configuration de cet appareil</button>
   </div>
 </div>
 

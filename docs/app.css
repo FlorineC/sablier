@@ -439,3 +439,82 @@ nav.tabbar button[aria-selected="true"]{color:var(--accent);font-weight:800}
 .sheet input[type=email],.sheet input[type=password]{border:1px solid var(--border);background:var(--surface);border-radius:14px;min-height:50px;padding:0 14px;width:100%}
 .data-text{width:100%;min-height:180px;border:1px solid var(--border);background:var(--bg);border-radius:14px;padding:10px 12px;font-family:var(--font-display);font-size:13px;resize:vertical;color:var(--ink)}
 #accountEmail{font-weight:700;word-break:break-all}
+
+/* ---------- v11 ---------- */
+.sync-note{border:none;background:transparent;color:var(--ink-faint);font:inherit;font-size:12px;font-weight:700;min-height:var(--tap);padding:0 8px;border-radius:10px}
+.sync-note:hover{background:var(--surface-2);color:var(--ink)}
+.setting-ctrl.wrap{flex-wrap:wrap}
+code{font-family:var(--font-display);font-size:.9em}
+/* sélecteur d'emoji */
+.emoji-picker{display:flex;flex-direction:column;gap:8px}
+.emoji-search-row{display:flex;gap:8px}
+.emoji-search-row input{flex:1 1 auto;min-width:0;min-height:var(--tap);border:1px solid var(--border);background:var(--bg);border-radius:12px;padding:0 12px}
+.emoji-search-row .btn{min-height:var(--tap);padding:0 14px}
+.emoji-recent{display:flex;align-items:center;gap:8px}
+.emoji-recent > span{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-muted);font-weight:800}
+#emojiRecent{display:flex;gap:4px;overflow-x:auto;scrollbar-width:none}
+.emoji-cats{display:flex;gap:4px;overflow-x:auto;scrollbar-width:none}
+.emoji-cat{flex:0 0 auto;width:var(--tap);height:var(--tap);border:none;border-radius:12px;background:transparent;font-size:20px;padding:0;opacity:.55}
+.emoji-cat[aria-selected="true"]{background:var(--accent-soft);opacity:1}
+.emoji-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(44px,1fr));gap:2px;max-height:min(34vh,260px);overflow-y:auto;overscroll-behavior:contain;
+  background:var(--bg);border-radius:14px;padding:4px}
+.emoji-opt{border:none;background:transparent;border-radius:10px;height:var(--tap);min-width:var(--tap);font-size:24px;padding:0;line-height:1}
+.emoji-opt:hover,.emoji-opt:focus-visible{background:var(--surface-2)}
+.emoji-opt.sel{background:var(--accent-soft);outline:2px solid var(--accent)}
+.emoji-empty{grid-column:1/-1;color:var(--ink-muted);font-size:14px;padding:16px;text-align:center}
+/* carte de file épurée */
+.task-card{padding:14px 6px 0 4px}
+.task-row{align-items:flex-start;gap:6px}
+.task-emoji.drag-handle{width:40px;height:var(--tap);display:inline-flex;align-items:center;justify-content:center;font-size:24px;cursor:grab;touch-action:none;border-radius:10px;user-select:none;-webkit-user-select:none}
+.task-emoji.drag-handle:active{cursor:grabbing;background:var(--surface-2)}
+.task-main{flex-direction:column;gap:0}
+.task-title{min-height:40px}
+.task-meta{display:flex;align-items:center;gap:10px;padding-left:6px;min-height:40px}
+.dur{display:inline-flex;align-items:baseline;gap:3px;color:var(--ink-muted);font-size:13px;font-weight:700}
+.dur input.task-minutes{width:40px;min-height:40px;border:none;border-bottom:1.5px dashed var(--border);border-radius:0;background:transparent;text-align:center;
+  font-family:var(--font-display);font-size:16px;font-weight:700;color:var(--ink);padding:0;-moz-appearance:textfield;appearance:textfield}
+.dur input.task-minutes:focus{border-bottom-color:var(--accent);outline:none}
+.dur input.task-minutes::-webkit-outer-spin-button,.dur input.task-minutes::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.task-timer{font-family:var(--font-display);font-size:13px;color:var(--warn);font-weight:700}
+.task-timer:not(:empty)::after{content:" restant";font-family:var(--font-body);font-weight:600;color:var(--ink-muted)}
+.task-row .play-mini{margin-top:0}
+.task-card .quick-acts{display:flex;gap:0;margin:6px 0 0;padding:2px 0 4px;background:transparent;border-radius:0;border-top:1px solid var(--border)}
+.task-card .quick-acts button{flex:1 1 0;min-width:0;height:48px;padding:0;border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+  font-size:11px;font-weight:700;color:var(--ink-muted);background:transparent}
+.task-card .quick-acts button svg.ic{width:19px;height:19px}
+.task-card .quick-acts button:hover,.task-card .quick-acts button:active{background:var(--surface-2);color:var(--ink)}
+.task-card .quick-acts button.ok svg{color:var(--accent)}
+.task-card .quick-acts button.danger svg{color:var(--danger)}
+.task-card .quick-acts button.ok,.task-card .quick-acts button.danger{color:var(--ink-muted)}
+.ts-actions{grid-template-columns:repeat(4,1fr)}
+.task-meta .task-num{width:auto;font-size:12px;color:var(--ink-faint)}
+.task-meta .task-num::before{content:"#"}
+/* v11 retouches */
+.dur{gap:6px}
+.dur input.task-minutes{width:48px;min-height:40px;border:1px solid var(--border);border-radius:10px;background:var(--bg)}
+.dur input.task-minutes:hover{border-color:var(--ink-faint)}
+.dur input.task-minutes:focus{border-color:var(--accent);border-bottom-color:var(--accent)}
+#accountEmail{word-break:normal;overflow-wrap:anywhere}
+.emoji-search-row .btn{white-space:nowrap}
+
+/* v12 : emoji au toucher */
+button.emoji-preview{border:none;cursor:pointer;padding:0;position:relative}
+button.emoji-preview::after{content:"";position:absolute;right:-2px;bottom:-2px;width:14px;height:14px;border-radius:50%;background:var(--accent);
+  box-shadow:0 0 0 2px var(--surface);mask:none}
+button.emoji-preview[aria-expanded="true"]{outline:2px solid var(--accent)}
+.now-emoji{cursor:pointer}
+.now-emoji:hover{background:var(--surface-3)}
+
+/* v12 : colonne de 4 flèches */
+.move-col{justify-content:flex-start;gap:0}
+.move-col button{height:40px;width:40px}
+.move-col svg.ic{width:19px;height:19px}
+.ts-actions{grid-template-columns:repeat(2,1fr)}
+.ts-actions{display:flex;gap:6px}
+.ts-actions button{flex:1 1 0;flex-direction:row;min-height:52px;font-size:14px;gap:8px}
+button.emoji-preview::after{content:"✎";width:20px;height:20px;right:-4px;bottom:-4px;font-size:12px;line-height:20px;text-align:center;color:var(--accent-ink);font-weight:800}
+
+/* v13 : remise à zéro */
+.mini-reset{border:none;background:transparent;color:var(--ink-muted);width:40px;height:40px;border-radius:10px;padding:0;display:inline-flex;align-items:center;justify-content:center;margin-left:-6px}
+.mini-reset:hover{background:var(--surface-2);color:var(--ink)}
+.mini-reset svg.ic{width:18px;height:18px}

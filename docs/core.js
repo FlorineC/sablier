@@ -889,3 +889,54 @@ export function importData(text) {
   if (!Array.isArray(raw.lists) && !Array.isArray(raw.tasks)) return null;
   return normalizeState(raw);
 }
+
+// ---------------------------------------------------------------- configuration Firebase collée
+const FB_KEYS = ["apiKey", "authDomain", "projectId", "storageBucket", "messagingSenderId", "appId", "measurementId", "databaseURL"];
+export function parseFirebaseConfig(text) {
+  const str = String(text ?? "");
+  let cfg = null;
+  try {
+    const j = JSON.parse(str);
+    if (j && typeof j === "object" && !Array.isArray(j)) cfg = Object.fromEntries(FB_KEYS.filter((k) => typeof j[k] === "string").map((k) => [k, j[k]]));
+  } catch { /* pas du JSON : extrait depuis le code copié dans la console */ }
+  if (!cfg) {
+    cfg = {};
+    const re = /\b(apiKey|authDomain|projectId|storageBucket|messagingSenderId|appId|measurementId|databaseURL)\s*:\s*["'`]([^"'`]+)["'`]/g;
+    let m;
+    while ((m = re.exec(str))) cfg[m[1]] = m[2];
+  }
+  return cfg.apiKey && cfg.projectId ? cfg : null;
+}
+
+// ---------------------------------------------------------------- recherche d'emoji
+// data : [[emoji, libellé, mots-clés, groupe], …]
+export function searchEmoji(data, query) {
+  const q = normalizeText(query).trim();
+  if (!q) return data.slice();
+  const scored = [];
+  data.forEach((row, i) => {
+    const label = normalizeText(row[1]), tags = normalizeText(row[2]);
+    const words = label.split(/\s+/), tagWords = tags.split(/\s+/);
+    let score = -1;
+    if (label === q) score = 0;
+    else if (label.startsWith(q)) score = 1;
+    else if (words.some((w) => w.startsWith(q))) score = 2;
+    else if (tagWords.some((w) => w.startsWith(q))) score = 3;
+    else if (label.includes(q) || tags.includes(q)) score = 4;
+    if (score >= 0) scored.push([score, i, row]);
+  });
+  return scored.sort((a, b) => a[0] - b[0] || a[1] - b[1]).map((x) => x[2]);
+}
+
+// ---------------------------------------------------------------- remise à zéro du temps
+// Le temps passé repart de zéro (durée prévue complète) ; une tâche qui tournait continue de tourner.
+export function resetTime(state, taskId, now) {
+  if (!locate(state, taskId)) return state;
+  const s = clone(state);
+  const { list, task } = locate(s, taskId);
+  task.spentSec = 0;
+  task.minutes = clamp(Math.round(task.minutes), MIN_MINUTES, MAX_MINUTES);
+  if (list.active && list.active.taskId === taskId && listRunning(list)) list.active.startedAtMs = now;
+  if (list.alertedTaskId === taskId) list.alertedTaskId = null;
+  return s;
+}

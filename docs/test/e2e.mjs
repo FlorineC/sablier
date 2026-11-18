@@ -57,8 +57,8 @@ async function open({ db, clock = true, storage } = {}) {
   if (clock) await page.clock.install({ time: T0 });
   if (db) await page.addInitScript(MOCK_DB, db);
   if (storage) await page.addInitScript((s) => { if (!sessionStorage.getItem("seeded")) { localStorage.setItem("sablier.v2", s); sessionStorage.setItem("seeded", "1"); } }, storage);
+  if (clock) await page.clock.pauseAt(new Date(T0.getTime() + 1000)); // horloge figée dès le départ : tests déterministes
   await page.goto(URL_, { waitUntil: "domcontentloaded" });
-  if (clock) await page.clock.pauseAt(new Date(T0.getTime() + 1000));
   await page.waitForSelector("#app[data-ready='1']");
   if (db && clock) await page.clock.runFor(200); // laisse la base simulée répondre
   page.errors = errors;
@@ -205,7 +205,9 @@ spec("A5", "édition en ligne dans la file + via le menu, conservée au recharge
   await menuFor(p, "Premier");
   await p.fill("#tsTitle", "Tout premier");
   await p.fill("#tsMinutes", "12");
-  await p.locator("#tsEmojiGrid button", { hasText: "🎯" }).click();
+  await p.click("#tsEmojiPreview");
+  await p.fill("#emojiSearch", "cible");
+  await p.locator("#emojiGrid .emoji-opt", { hasText: "🎯" }).first().click();
   await p.click("#tsSave");
   await p.reload(); await p.waitForSelector("#app[data-ready='1']");
   eq(await titlesOf(p), ["Tout premier", "Version finale"]);
@@ -228,15 +230,18 @@ spec("A6", "réordonner par glisser-déposer dans la file", async () => {
   eq(await titlesOf(p), ["A", "C", "D", "B"]);
   return p;
 });
-spec("A6", "monter / descendre via le menu", async () => {
+spec("A6", "monter / descendre avec les flèches de la carte", async () => {
   const p = await open();
-  for (const t of ["A", "B", "C"]) await add(p, t);
-  await menuFor(p, "C");
-  await p.click("#taskSheet [data-ts=up]");
-  eq(await titlesOf(p), ["A", "C", "B"]);
-  await menuFor(p, "A");
-  await p.click("#taskSheet [data-ts=down]");
-  eq(await titlesOf(p), ["C", "A", "B"]);
+  for (const t of ["A", "B", "C", "D"]) await add(p, t);
+  await card(p, 2).locator("[data-action=up]").click();
+  eq(await titlesOf(p), ["A", "B", "D", "C"]);
+  await card(p, 0).locator("[data-action=down]").click();
+  eq(await titlesOf(p), ["A", "D", "B", "C"]);
+  await card(p, 0).locator("[data-action=up]").click(); // rien ne tourne : peut devenir la prochaine
+  eq(await titlesOf(p), ["D", "A", "B", "C"]);
+  await p.click("#nowToggle");
+  assert(await card(p, 0).locator("[data-action=up]").isDisabled(), "ne peut pas passer devant la tâche en cours");
+  assert(await card(p, 2).locator("[data-action=down]").isDisabled(), "dernière : descendre grisé");
   return p;
 });
 spec("A7", "dupliquer", async () => {
@@ -263,7 +268,11 @@ spec("A9", "cartes épurées : actions secondaires dans le menu ⋯", async () =
   for (const a of ["top", "bottom", "later", "play", "menu"]) assert(await card(p, 0).locator(`[data-action=${a}]`).isVisible(), `bouton ${a} absent de la carte`);
   assert(await p.locator("#nowLater").isVisible(), "bouton Plus tard sur la carte Maintenant");
   await menuFor(p, "B");
-  for (const a of ["up", "down", "dup", "later", "complete", "delete"]) assert(await p.locator(`#taskSheet [data-ts=${a}]`).count() === 1, `action ${a} absente`);
+  for (const a of ["dup"]) assert(await p.locator(`#taskSheet [data-ts=${a}]:visible`).count() === 1, `action ${a} absente`);
+  for (const a of ["top", "up", "down", "bottom", "later", "complete", "delete"]) eq(await p.locator(`#taskSheet [data-ts=${a}]:visible`).count(), 0, `« ${a} » ne doit pas être répété dans le menu`);
+  await p.keyboard.press("Escape");
+  await menuFor(p, "A"); // tâche en tête : Supprimer reste disponible
+  eq(await p.locator("#taskSheet [data-ts=delete]:visible").count(), 1);
   await p.keyboard.press("Escape");
   assert(await p.locator("#taskSheet").isHidden(), "Échap ferme le menu");
   return p;
@@ -284,10 +293,11 @@ spec("U1", "carte « Maintenant » : prochaine tâche, puis tâche en cours", as
   eq(await text(p, "#nowLabel"), "En pause");
   return p;
 });
-spec("U2", "file « À suivre » numérotée", async () => {
+spec("U2", "file « À suivre » sans numéro", async () => {
   const p = await open();
   for (const t of ["A", "B", "C"]) await add(p, t);
-  eq(await p.locator("#taskList .task-num").allTextContents(), ["2", "3"]);
+  eq(await p.locator("#taskList .task-num").count(), 0);
+  eq(await titlesOf(p), ["A", "B", "C"]);
   assert(await p.locator("#queueTitle").isVisible(), "titre « À suivre »");
   return p;
 });
@@ -439,21 +449,11 @@ spec("D1", "« Plus tard » en un clic (file et carte Maintenant), annulable", a
   eq(await p.locator(".later-row .row-title").allTextContents(), ["B"]);
   return p;
 });
-spec("D1", "« Plus tard » via le menu", async () => {
-  const p = await open();
-  await add(p, "A"); await add(p, "B");
-  await menuFor(p, "A");
-  await p.click("#taskSheet [data-ts=later]");
-  eq(await titlesOf(p), ["B"]);
-  await p.click("nav.tabbar [data-tab=later]");
-  eq(await p.locator(".later-row .row-title").allTextContents(), ["A"]);
-  return p;
-});
 spec("D2", "réactiver dans la liste ouverte, supprimer", async () => {
   const p = await open();
   await add(p, "A"); await add(p, "B");
-  await menuFor(p, "A"); await p.click("#taskSheet [data-ts=later]");
-  await menuFor(p, "B"); await p.click("#taskSheet [data-ts=later]");
+  await p.click("#nowLater");
+  await p.click("#nowLater");
   await newList(p, "Autre");
   await p.click("nav.tabbar [data-tab=later]");
   await p.locator(".later-row").nth(0).locator("[data-action=reactivate]").click();
@@ -480,8 +480,8 @@ spec("E1", "historique : liste d'origine, estimé vs réel, total", async () => 
 spec("E2", "rouvrir et vider (avec confirmation)", async () => {
   const p = await open();
   await add(p, "A"); await add(p, "B");
-  await menuFor(p, "A"); await p.click("#taskSheet [data-ts=complete]");
-  await menuFor(p, "B"); await p.click("#taskSheet [data-ts=complete]");
+  await p.click("#nowDone");
+  await p.click("#nowDone");
   await p.click("nav.tabbar [data-tab=done]");
   await p.locator(".done-row").nth(0).locator("[data-action=reopen]").click();
   await p.click("#clearDone");
@@ -596,7 +596,7 @@ spec("F6", "supprimer une routine (confirmation + annuler)", async () => {
 spec("G1", "rechargement : listes, liste ouverte, plus tard, réglages", async () => {
   const p = await open();
   await add(p, "A"); await add(p, "B");
-  await menuFor(p, "B"); await p.click("#taskSheet [data-ts=later]");
+  await card(p, 0).locator("[data-action=later]").click();
   await newList(p, "Cuisine");
   await add(p, "Cuire");
   await p.click("nav.tabbar [data-tab=settings]");
@@ -791,20 +791,6 @@ spec("A11", "tout en haut / tout en bas en un clic sur la carte", async () => {
   assert(await card(p, 2).locator("[data-action=bottom]").isDisabled(), "déjà tout en bas");
   return p;
 });
-spec("A11", "tout en haut / tout en bas depuis le menu", async () => {
-  const p = await open();
-  for (const t of ["A", "B", "C", "D"]) await add(p, t);
-  await p.click("#nowToggle");
-  await menuFor(p, "D");
-  await p.click("#taskSheet [data-ts=top]");
-  eq(await titlesOf(p), ["A", "D", "B", "C"]);
-  await menuFor(p, "D");
-  await p.click("#taskSheet [data-ts=bottom]");
-  eq(await titlesOf(p), ["A", "B", "C", "D"]);
-  await menuFor(p, "A");
-  assert(await p.locator("#taskSheet [data-ts=top]").isDisabled(), "tâche en cours : « Tout en haut » désactivé");
-  return p;
-});
 spec("U4", "heure estimée sur chaque tâche", async () => {
   const p = await open();
   await add(p, "A 10m"); await add(p, "B 30m"); await add(p, "C 5m");
@@ -978,8 +964,8 @@ async function openPhone() {
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.clock.install({ time: T0 });
-  await page.goto(URL_, { waitUntil: "domcontentloaded" });
   await page.clock.pauseAt(new Date(T0.getTime() + 1000));
+  await page.goto(URL_, { waitUntil: "domcontentloaded" });
   await page.waitForSelector("#app[data-ready='1']");
   page.errors = errors;
   return page;
@@ -1150,15 +1136,21 @@ spec("A9", "disposition : ⤒/⤓ en colonne à gauche, actions libellées en ba
   for (const t of ["A", "B", "C"]) await add(p, t);
   await p.locator("#quickAdd").blur();
   const c = card(p, 0);
-  const top = await c.locator("[data-action=top]").boundingBox();
-  const bottom = await c.locator("[data-action=bottom]").boundingBox();
+  const boxes = [];
+  for (const a of ["top", "up", "down", "bottom"]) boxes.push(await c.locator(`.move-col [data-action=${a}]`).boundingBox());
   const title = await c.locator(".task-title").boundingBox();
-  assert(top.x + top.width <= title.x && bottom.x + bottom.width <= title.x, "⤒/⤓ à gauche du titre");
-  assert(Math.abs(top.x - bottom.x) < 2 && bottom.y > top.y, "⤒ au-dessus de ⤓");
+  assert(boxes.every((b) => b.x + b.width <= title.x), "flèches à gauche du titre");
+  assert(boxes.every((b, i) => i === 0 || (Math.abs(b.x - boxes[0].x) < 2 && b.y > boxes[i - 1].y)), "dans l'ordre ⤒ ↑ ↓ ⤓, en colonne");
   const labels = await c.locator(".quick-acts button").allTextContents();
   eq(labels.map((l) => l.trim()), ["Plus tard", "Fait", "Suppr.", "Modifier"]);
-  const acts = await c.locator(".quick-acts").boundingBox(), card0 = await c.boundingBox();
-  assert(acts.x + acts.width > card0.x + card0.width - 16, "actions alignées à droite");
+  const widths = await c.locator(".quick-acts button").evaluateAll((els) => els.map((e) => e.getBoundingClientRect().width));
+  assert(Math.max(...widths) - Math.min(...widths) <= 2, "actions de même largeur : " + widths.join(","));
+  const bg = await c.locator(".quick-acts").evaluate((e) => getComputedStyle(e).backgroundColor);
+  assert(bg === "rgba(0, 0, 0, 0)" || bg === "transparent", "pas de fond derrière les actions : " + bg);
+  eq(await c.locator(".drag-handle").evaluate((e) => e.classList.contains("task-emoji")), true, "on glisse par l'emoji");
+  eq(await p.locator("#taskList svg path[d^='M9 6h.01']").count(), 0, "plus de poignée à points");
+  const tb = await c.locator(".task-title").boundingBox(), dur = await c.locator(".task-minutes").boundingBox();
+  assert(dur.y >= tb.y + tb.height - 4, "durée affichée sous le titre");
   return p;
 });
 
@@ -1352,8 +1344,8 @@ spec("N1", "appli Android : alarme programmée à la fin de la tâche, annulée 
   p.on("pageerror", (e) => p.errors.push(e.message));
   await p.clock.install({ time: T0 });
   await p.addInitScript(CAPACITOR_MOCK);
-  await p.goto(URL_, { waitUntil: "domcontentloaded" });
   await p.clock.pauseAt(new Date(T0.getTime() + 1000));
+  await p.goto(URL_, { waitUntil: "domcontentloaded" });
   await p.waitForSelector("#app[data-ready='1']");
   await add(p, "Emails 10m");
   await p.click("#nowToggle");
@@ -1369,6 +1361,109 @@ spec("N1", "appli Android : alarme programmée à la fin de la tâche, annulée 
   await p.click("#nowToggle"); // pause
   await p.clock.runFor(1000);
   eq(await p.evaluate(() => window.__lnPending().length), 0, "annulée en pause");
+  return p;
+});
+
+// ================================================================ v11
+spec("A5", "sélecteur d'emoji complet : catégories, recherche, récents", async () => {
+  const p = await open();
+  await add(p, "Tâche");
+  await p.click("#nowMenu");
+  assert(await p.locator("#emojiPicker").isHidden(), "sélecteur masqué tant qu'on ne touche pas l'emoji");
+  await p.click("#tsEmojiPreview");
+  assert(await p.locator("#emojiPicker").isVisible(), "sélecteur affiché au toucher de l'emoji");
+  await p.waitForFunction(() => document.querySelectorAll("#emojiGrid .emoji-opt").length > 50);
+  assert(await p.locator("#emojiCats .emoji-cat").count() >= 8, "catégories");
+  await p.locator("#emojiCats .emoji-cat").nth(3).click();
+  assert(await p.locator("#emojiGrid .emoji-opt").count() > 50, "catégorie affichée");
+  await p.fill("#emojiSearch", "cafe");
+  assert((await p.locator("#emojiGrid .emoji-opt").allTextContents()).includes("☕"), "recherche sans accent");
+  await p.locator("#emojiGrid .emoji-opt", { hasText: "☕" }).first().click();
+  eq(await text(p, "#tsEmojiPreview"), "☕");
+  await p.click("#tsSave");
+  eq(await text(p, "#nowEmoji"), "☕");
+  await p.click("#nowMenu");
+  await p.click("#tsEmojiPreview");
+  eq((await p.locator("#emojiRecent .emoji-opt").allTextContents())[0], "☕");
+  await p.click("#tsEmojiAuto");
+  eq(await text(p, "#tsEmojiPreview"), "🧠");
+  return p;
+});
+spec("S1", "sans configuration : section Compte visible, configuration collée dans l'appli", async () => {
+  const context = await browser.newContext({ viewport: { width: 420, height: 860 } });
+  context.setDefaultTimeout(5000);
+  const p = await context.newPage();
+  p.errors = [];
+  p.on("pageerror", (e) => p.errors.push(e.message));
+  await p.addInitScript(FIREBASE_MOCK, { users: { "flo@ex.fr": { pw: "secret1", uid: "u1" } } });
+  await p.addInitScript(() => { delete window.__SABLIER_FIREBASE_CONFIG; });
+  await p.goto(URL_, { waitUntil: "domcontentloaded" });
+  await p.waitForSelector("#app[data-ready='1']");
+  await p.click("nav.tabbar [data-tab=settings]");
+  assert(await p.locator("#accountGroup").isVisible(), "section Compte visible");
+  assert((await text(p, "#accountEmail")).includes("non configurée"), "état : " + await text(p, "#accountEmail"));
+  await p.click("#fbSetup");
+  await p.fill("#fbConfigText", "pas une config");
+  await p.click("#fbConfigSave");
+  assert(await p.locator("#fbConfigError").isVisible(), "erreur sur texte invalide");
+  await p.fill("#fbConfigText", 'const firebaseConfig = {\n  apiKey: "AIza-x",\n  authDomain: "s.firebaseapp.com",\n  projectId: "s",\n  appId: "1:2:web:3"\n};');
+  await p.click("#fbConfigSave");
+  await p.waitForSelector("#authSheet:not([hidden])");
+  await p.fill("#authEmail", "flo@ex.fr");
+  await p.fill("#authPassword", "secret1");
+  await p.click("#authLogin");
+  await p.waitForSelector("#authSheet", { state: "hidden" });
+  eq(await text(p, "#accountEmail"), "flo@ex.fr");
+  await p.reload(); // la configuration collée est mémorisée sur l'appareil
+  await p.waitForSelector("#app[data-ready='1']");
+  await p.waitForSelector("#authSheet:not([hidden])");
+  return p;
+});
+spec("S1", "l'indicateur en haut ouvre la connexion", async () => {
+  const p = await openFirebase({});
+  await p.waitForSelector("#authSheet:not([hidden])");
+  await p.click("#authSkip");
+  await p.click("#syncNote");
+  await p.waitForSelector("#authSheet:not([hidden])");
+  return p;
+});
+
+spec("A5", "toucher l'emoji d'une carte (sans glisser) ou de la carte « Maintenant » ouvre le sélecteur", async () => {
+  const p = await open();
+  await add(p, "A"); await add(p, "B");
+  await card(p, 0).locator(".task-emoji").click();
+  await p.waitForSelector("#taskSheet:not([hidden])");
+  eq(await p.inputValue("#tsTitle"), "B");
+  assert(await p.locator("#emojiPicker").isVisible(), "sélecteur ouvert directement");
+  await p.keyboard.press("Escape");
+  await p.click("#nowEmoji");
+  await p.waitForSelector("#taskSheet:not([hidden])");
+  eq(await p.inputValue("#tsTitle"), "A");
+  assert(await p.locator("#emojiPicker").isVisible(), "sélecteur ouvert depuis la carte Maintenant");
+  return p;
+});
+
+spec("C12", "bouton ↺ : remettre le temps de la tâche à zéro (annulable)", async () => {
+  const p = await open();
+  await add(p, "A 10m"); await add(p, "B 10m");
+  assert(await p.locator("#nowReset").isHidden(), "pas de bouton tant qu'aucun temps n'est passé");
+  await p.click("#nowToggle");
+  await p.clock.runFor(125000);
+  eq(await text(p, "#nowTimer"), "07:55");
+  await p.click("#nowReset");
+  eq(await text(p, "#nowTimer"), "10:00");
+  await p.clock.runFor(5000);
+  eq(await text(p, "#nowTimer"), "09:55", "continue de tourner");
+  await p.click("#toastUndo");
+  eq(await text(p, "#nowTimer"), "07:50", "annulé");
+  await card(p, 0).locator("[data-action=play]").click(); // B démarre, A garde son temps
+  await p.clock.runFor(1000);
+  await card(p, 0).locator("[data-action=reset]").click();
+  eq(await card(p, 0).locator(".task-timer").textContent(), "", "A remise à zéro dans la file");
+  await p.click("#nowFocus");
+  await p.clock.runFor(30000);
+  await p.click("#focusReset");
+  eq(await text(p, "#focusTimer"), "10:00");
   return p;
 });
 

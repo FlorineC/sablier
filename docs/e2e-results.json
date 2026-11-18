@@ -1,5 +1,5 @@
 {
- "ranAt": "2026-11-17T18:19:42.590Z",
+ "ranAt": "2026-11-18T07:00:28.124Z",
  "results": [
   {
    "specId": "L1",
@@ -53,7 +53,7 @@
   },
   {
    "specId": "A6",
-   "name": "monter / descendre via le menu",
+   "name": "monter / descendre avec les flèches de la carte",
    "ok": true
   },
   {
@@ -78,7 +78,7 @@
   },
   {
    "specId": "U2",
-   "name": "file « À suivre » numérotée",
+   "name": "file « À suivre » sans numéro",
    "ok": true
   },
   {
@@ -139,11 +139,6 @@
   {
    "specId": "D1",
    "name": "« Plus tard » en un clic (file et carte Maintenant), annulable",
-   "ok": true
-  },
-  {
-   "specId": "D1",
-   "name": "« Plus tard » via le menu",
    "ok": true
   },
   {
@@ -254,11 +249,6 @@
   {
    "specId": "A11",
    "name": "tout en haut / tout en bas en un clic sur la carte",
-   "ok": true
-  },
-  {
-   "specId": "A11",
-   "name": "tout en haut / tout en bas depuis le menu",
    "ok": true
   },
   {
@@ -394,6 +384,31 @@
   {
    "specId": "N1",
    "name": "appli Android : alarme programmée à la fin de la tâche, annulée en pause",
+   "ok": true
+  },
+  {
+   "specId": "A5",
+   "name": "sélecteur d'emoji complet : catégories, recherche, récents",
+   "ok": true
+  },
+  {
+   "specId": "S1",
+   "name": "sans configuration : section Compte visible, configuration collée dans l'appli",
+   "ok": true
+  },
+  {
+   "specId": "S1",
+   "name": "l'indicateur en haut ouvre la connexion",
+   "ok": true
+  },
+  {
+   "specId": "A5",
+   "name": "toucher l'emoji d'une carte (sans glisser) ou de la carte « Maintenant » ouvre le sélecteur",
+   "ok": true
+  },
+  {
+   "specId": "C12",
+   "name": "bouton ↺ : remettre le temps de la tâche à zéro (annulable)",
    "ok": true
   }
  ]
