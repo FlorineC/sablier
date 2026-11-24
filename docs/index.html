@@ -158,6 +158,9 @@
         <label class="setting"><span>Style d'horloge</span>
           <select id="setClock"><option value="ring">Anneau</option><option value="pie">Camembert</option><option value="digital">Chiffres</option></select>
         </label>
+        <label class="setting"><span>Prévenir avant la fin (couleur + son discret)</span>
+          <select id="setWarn"><option value="0">Non</option><option value="10">10 % avant</option><option value="20">20 % avant</option><option value="25">25 % avant</option><option value="33">33 % avant</option><option value="50">50 % avant</option></select>
+        </label>
         <p class="set-group">Son</p>
         <label class="setting"><span>Son à la fin du temps</span><input type="checkbox" id="setSound"></label>
         <div class="setting">
@@ -167,6 +170,14 @@
             <button class="icon-btn soft" id="testSound" aria-label="Tester le son" title="Tester le son" data-icon="sound"></button>
           </div>
         </div>
+        <label class="setting" id="ongoingRow" hidden><span>Notification pendant un minuteur (garde la synchro active)</span><input type="checkbox" id="setOngoing"></label>
+        <div class="setting column" id="batteryRow" hidden><span>Batterie</span>
+          <span class="sheet-note" id="batteryState"></span>
+          <button class="btn ghost" id="batteryBtn" style="margin-top:8px" hidden>Ne pas restreindre Sablier</button>
+        </div>
+        <label class="setting" id="alarmScopeRow" hidden><span>Alarmes sur ce téléphone</span>
+          <select id="setAlarmScope"><option value="all">Toutes les listes</option><option value="mine">Tâches lancées ici</option></select>
+        </label>
         <p class="set-group">Listes &amp; routines</p>
         <label class="setting"><span>Durée par défaut (min)</span><input type="number" id="setDefault" min="1" max="600" inputmode="numeric"></label>
         <label class="setting"><span>Charger une routine dans une liste</span>
@@ -254,7 +265,7 @@
     <div class="ts-edit">
       <button type="button" class="emoji-preview" id="tsEmojiPreview" aria-label="Changer l'emoji" aria-expanded="false" title="Changer l'emoji"></button>
       <input type="text" id="tsTitle" aria-label="Titre">
-      <label class="min-chip big"><input type="number" id="tsMinutes" min="1" max="600" inputmode="numeric" aria-label="Durée"><span>min</span></label>
+      <input type="text" id="tsDuration" class="dur-input" inputmode="decimal" autocomplete="off" aria-label="Durée prévue (mm:ss, ou hh:mm:ss)">
     </div>
     <div class="emoji-picker" id="emojiPicker" hidden>
       <div class="emoji-search-row">

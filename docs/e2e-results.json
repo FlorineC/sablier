@@ -1,5 +1,5 @@
 {
- "ranAt": "2026-11-24T09:40:45.270Z",
+ "ranAt": "2026-11-24T15:18:55.607Z",
  "results": [
   {
    "specId": "L1",
@@ -474,6 +474,46 @@
   {
    "specId": "F2",
    "name": "routine : toucher l'emoji d'une étape ouvre le sélecteur ; l'emoji automatique suit le titre",
+   "ok": true
+  },
+  {
+   "specId": "U9",
+   "name": "vue maximisée : les 4 boutons tiennent dans l'écran (« Reprendre »)",
+   "ok": true
+  },
+  {
+   "specId": "A3",
+   "name": "durée prévue au format minuteur (heures dès 60 min) sur la carte et dans la fiche",
+   "ok": true
+  },
+  {
+   "specId": "A6",
+   "name": "glisser : la carte tenue suit le doigt en transparence, les autres s'animent",
+   "ok": true
+  },
+  {
+   "specId": "A13",
+   "name": "insérer des tâches après une carte",
+   "ok": true
+  },
+  {
+   "specId": "C13",
+   "name": "prévenir avant la fin : couleur d'alerte et son unique",
+   "ok": true
+  },
+  {
+   "specId": "G3",
+   "name": "un appareil rouvert avec un état périmé adopte l'état distant au lieu de l'écraser",
+   "ok": true
+  },
+  {
+   "specId": "N2",
+   "name": "Android : alarmes seulement pour les tâches démarrées sur ce téléphone",
+   "ok": true
+  },
+  {
+   "specId": "N3",
+   "name": "Android : notification « minuteur en cours » avec Pause et Terminer",
    "ok": true
   }
  ]

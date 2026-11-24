@@ -354,7 +354,9 @@ spec("C8", "titre d'onglet : le minuteur le plus proche de zéro, +N", () => {
 spec("C9", "formats", () => {
   expect(C.fmtTimer(0)).toBe("00:00");
   expect(C.fmtTimer(65)).toBe("01:05");
-  expect(C.fmtTimer(3725)).toBe("1:02:05");
+  expect(C.fmtTimer(3725)).toBe("01:02:05");
+  expect(C.fmtTimer(3600)).toBe("01:00:00");
+  expect(C.fmtTimer(3599)).toBe("59:59");
   expect(C.fmtTimer(-75)).toBe("+01:15");
   expect(C.fmtDuration(25)).toBe("25 min");
   expect(C.fmtDuration(60)).toBe("1 h");
@@ -1072,4 +1074,96 @@ spec("A4", "renommer : l'emoji automatique suit, un emoji choisi reste", () => {
   s = C.updateTask(s, tid(s, 0), { emoji: "🦄" });
   s = C.updateTask(s, tid(s, 0), { title: "Emails" });
   expect(tasks(s)[0].emoji).toBe("🦄");
+});
+
+// ================================================================ v16
+spec("A3", "durée prévue au format minuteur : saisie et lecture", () => {
+  expect(C.parseDurationInput("25")).toBe(1500);
+  expect(C.parseDurationInput("25:00")).toBe(1500);
+  expect(C.parseDurationInput("1:30:00")).toBe(5400);
+  expect(C.parseDurationInput("01:30:00")).toBe(5400);
+  expect(C.parseDurationInput("90")).toBe(5400);
+  expect(C.parseDurationInput("1h30")).toBe(5400);
+  expect(C.parseDurationInput("19:42")).toBe(1182);
+  expect(C.parseDurationInput("abc")).toBe(null);
+  expect(C.parseDurationInput("")).toBe(null);
+  let s = withTasks({ title: "A", minutes: 10 });
+  s = C.updateTask(s, tid(s, 0), { durationSec: 5400 });
+  expect(tasks(s)[0].minutes).toBe(90);
+  s = C.updateTask(s, tid(s, 0), { durationSec: 1182 });
+  expect(C.remainingSec(s, tid(s, 0), T0)).toBe(1182);
+  expect(C.updateTask(s, tid(s, 0), { durationSec: 0 })).toEqual(s);
+  s = C.updateTask(s, tid(s, 0), { durationSec: 999999 });
+  expect(tasks(s)[0].minutes).toBe(600);
+});
+spec("A13", "insérer une tâche après une autre", () => {
+  let s = withTasks("A", "B", "C");
+  s = C.addTask(s, L(s), { title: "X" }, { afterId: tid(s, 0) });
+  expect(tasks(s).map((t) => t.title)).toEqual(["A", "X", "B", "C"]);
+  s = C.addTask(s, L(s), { title: "Y" }, { afterId: tid(s, 3) });
+  expect(tasks(s).map((t) => t.title)).toEqual(["A", "X", "B", "C", "Y"]);
+  s = C.addTask(s, L(s), { title: "Z" }, { afterId: "inconnu" });
+  expect(tasks(s).map((t) => t.title).at(-1)).toBe("Z");
+});
+spec("C13", "avertissement avant la fin : zone, une fois par durée, réglage", () => {
+  let s = withTasks({ title: "A", minutes: 10 }, { title: "B", minutes: 10 });
+  expect(s.settings.warnPercent).toBe(0);
+  expect(C.updateSettings(s, { warnPercent: 37 }).settings.warnPercent).toBe(0);
+  s = C.updateSettings(s, { warnPercent: 20 });
+  s = C.startTask(s, L(s), null, T0);
+  expect(C.warnDue(s, T0 + min(7))).toEqual([]);
+  const due = C.warnDue(s, T0 + min(8));
+  expect(due.map((d) => d.taskId)).toEqual([tid(s, 0)]);
+  expect(C.inWarnZone(s, tid(s, 0), T0 + min(8) + sec(1))).toBe(true);
+  expect(C.inWarnZone(s, tid(s, 0), T0 + min(5))).toBe(false);
+  expect(C.warnDue(s, T0 + min(11))).toEqual([]); // dépassé : c'est le signal de fin qui prend le relais
+  const s2 = C.adjustTime(s, L(s), 5);
+  expect(C.warnDue(s2, T0 + min(8))).toEqual([]);
+  expect(C.warnDue(s2, T0 + min(12)).map((d) => d.key) [0] !== due[0].key).toBe(true); // nouvelle durée : nouvel avertissement
+  const al = C.upcomingAlarms(s, T0 + min(1));
+  expect(al.map((a) => [a.kind, (a.atMs - T0) / 60000])).toEqual([["warn", 8], ["end", 10]]);
+  expect(al[0].id !== al[1].id).toBe(true);
+});
+spec("N2", "alarmes seulement pour les tâches démarrées sur cet appareil", () => {
+  let { s, l1, l2 } = twoLists();
+  s = C.startTask(s, l1, null, T0);
+  s = C.startTask(s, l2, null, T0);
+  s = C.markStartedBy(s, l1, "tel");
+  s = C.markStartedBy(s, l2, "pc");
+  expect(C.upcomingAlarms(s, T0, { deviceId: "tel", onlyMine: true }).map((a) => a.listName)).toEqual(["Ma liste"]);
+  expect(C.upcomingAlarms(s, T0).length).toBe(2);
+  // l'enchaînement automatique garde l'appareil qui a démarré
+  s = C.completeTask(s, l1, T0 + min(1));
+  expect(C.getList(s, l1).active.startedBy).toBe("tel");
+  const re = C.normalizeState(JSON.parse(JSON.stringify(s)));
+  expect(C.getList(re, l1).active.startedBy).toBe("tel");
+});
+spec("G3", "l'état distant reçu garde les signaux déjà donnés sur cet appareil", () => {
+  let s = withTasks({ title: "A", minutes: 1 }, "B");
+  s = C.startTask(s, L(s), null, T0);
+  const fired = C.checkTimeUp(s, T0 + min(2)).state;
+  const remote = C.stamp(C.renameList(s, L(s), "Renommée"), T0 + min(3), "pc");
+  const merged = C.carryLocalFlags(fired, remote);
+  expect(C.checkTimeUp(merged, T0 + min(3)).fired).toEqual([]);
+  expect(list(merged).name).toBe("Renommée");
+  expect(merged.updatedAtMs).toBe(remote.updatedAtMs);
+});
+
+// ================================================================ v17
+spec("N3", "notification « minuteur en cours » : tâche qui finit le plus tôt, fin exacte", () => {
+  let { s, l1, l2 } = twoLists();
+  expect(C.ongoingInfo(s, T0)).toBe(null);
+  s = C.startTask(s, l1, null, T0);
+  s = C.startTask(s, l2, null, T0 + min(1));
+  const o = C.ongoingInfo(s, T0 + min(2));
+  expect(o.listId).toBe(l2);
+  expect(o.title.endsWith("Cuire")).toBe(true);
+  expect(o.text).toBe("Cuisine · +1 autre liste");
+  expect(o.endAtMs).toBe(T0 + min(6));
+  expect(C.ongoingInfo(s, T0 + min(3)).endAtMs).toBe(o.endAtMs); // stable dans le temps
+  s = C.pauseTask(s, l2, T0 + min(3));
+  expect(C.ongoingInfo(s, T0 + min(3)).listId).toBe(l1);
+  expect(C.ongoingInfo(s, T0 + min(3)).text).toBe("Ma liste");
+  s = C.pauseTask(s, l1, T0 + min(3));
+  expect(C.ongoingInfo(s, T0 + min(3))).toBe(null);
 });

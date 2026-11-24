@@ -1,6 +1,6 @@
 // Sablier — couche interface. Toute la logique métier est dans core.js (testée).
 import * as C from "./core.js";
-import { setupAlarms, syncAlarms, isNative } from "./notify.js";
+import { setupAlarms, syncAlarms, isNative, setupOngoing, syncOngoing, batteryStatus, openBatterySettings } from "./notify.js";
 
 const $ = (id) => document.getElementById(id);
 const LS_KEY = "sablier.v2"; // même clé qu'avant : les données locales existantes sont migrées
@@ -87,6 +87,20 @@ const clientId = (() => {
   } catch { return C.uid(); }
 })();
 
+// Appareil (persistant) : sert à savoir quel téléphone a lancé un minuteur.
+const deviceId = (() => {
+  try {
+    let id = localStorage.getItem("sablier.device");
+    if (!id) { id = C.uid(); localStorage.setItem("sablier.device", id); }
+    return id;
+  } catch { return clientId; }
+})();
+// Données fraîches ? Au lancement et au retour sur l'appli, les signaux attendent l'état distant (4 s au plus).
+let remoteFresh = false, localOnly = false, staleSince = Date.now();
+const alertsReady = () => remoteFresh || localOnly || Date.now() - staleSince > 4000;
+const warnedKeys = new Set();
+window.__sablierWarns = 0;
+
 // ------------------------------------------------------------ état
 let state = loadLocal();
 let view = viewFromHash();
@@ -99,6 +113,7 @@ let listSheetMode = "create";
 let routineMenuId = null;
 let draft = null; // routine en cours d'édition
 let drag = null;
+let insertAfter = null, insertFocus = false; // insertion d'une tâche après une carte de la file
 let pickerStep = null; // étape de routine dont on choisit l'emoji (null : fiche tâche)
 let dlCarrier; // jalon en cours d'édition : id de la tâche, null = fin de liste, "new" = nouveau
 let launchRoutineId = null, launchMode = "now";
@@ -119,6 +134,14 @@ function commit(next, opts = {}) {
   if (!next || next === state) return false;
   if (opts.undoable) undoState = state;
   const before = opts.celebrateList ? C.getList(state, opts.celebrateList) : null;
+  // Changement automatique sur un appareil pas à jour : gardé localement, sans le rendre « plus récent ».
+  if (opts.auto && !(docRef && remoteFresh)) {
+    state = next;
+    saveLocal();
+    render();
+    return true;
+  }
+  if (!opts.auto) next = markStarts(state, next);
   state = C.stamp(next, now(), clientId);
   saveLocal();
   scheduleRemote();
@@ -126,6 +149,18 @@ function commit(next, opts = {}) {
   if (before && before.tasks.length > 0 && C.isListCleared(state, before.id)) celebrate(before.name);
   render();
   return true;
+}
+
+// Note l'appareil qui vient de lancer (ou relancer) le minuteur d'une liste.
+function markStarts(prev, next) {
+  let out = next;
+  for (const l of next.lists) {
+    if (!l.active || l.active.startedAtMs === null || l.active.startedAtMs === undefined) continue;
+    const p = prev.lists.find((x) => x.id === l.id);
+    const changed = !p || !p.active || p.active.taskId !== l.active.taskId || p.active.startedAtMs !== l.active.startedAtMs;
+    if (changed) out = C.markStartedBy(out, l.id, deviceId);
+  }
+  return out;
 }
 
 // ------------------------------------------------------------ synchro
@@ -269,10 +304,11 @@ $("signIn").addEventListener("click", () => { authSkipped = false; openAuth(); }
 function onRemoteSnapshot(snap) {
   const first = !remoteReady;
   remoteReady = true;
+  remoteFresh = true;
   setSync("synchronisé");
   const exists = typeof snap.exists === "function" ? snap.exists() : snap.exists;
   if (!exists) { if (state.updatedAtMs > 0) scheduleRemote(0); return; }
-  const remote = C.normalizeState(snap.data());
+  const remote = C.carryLocalFlags(state, C.normalizeState(snap.data()));
   if (C.shouldApplyRemote(state, remote, clientId)) {
     state = remote;
     saveLocal();
@@ -300,7 +336,17 @@ async function flushRemote() {
     if (writeQueued) { writeQueued = false; flushRemote(); }
   }
 }
-function setSync(text) { $("syncNote").textContent = text; }
+function setSync(text) {
+  $("syncNote").textContent = text;
+  localOnly = text === "local" && !docRef;
+}
+
+function ongoingEnabled() { try { return localStorage.getItem("sablier.ongoing") !== "off"; } catch { return true; } }
+function alarmScope() { try { return localStorage.getItem("sablier.alarmScope") || "all"; } catch { return "all"; } }
+const alarmOpts = () => ({ deviceId, onlyMine: alarmScope() === "mine" });
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden && docRef) { remoteFresh = false; staleSince = Date.now(); }
+});
 
 // ------------------------------------------------------------ navigation
 function viewFromHash() {
@@ -340,7 +386,8 @@ function render() {
   renderRoutines();
   renderSettings();
   tick(true);
-  syncAlarms(state, now());
+  syncAlarms(state, now(), alarmOpts());
+  syncOngoing(state, now(), { enabled: ongoingEnabled() });
 }
 
 function renderListBar() {
@@ -371,7 +418,7 @@ function queueCard(t, i, n, minIdx) {
       <div class="task-main">
         <input class="task-title" data-field="title" value="${esc(t.title)}" aria-label="Titre">
         <div class="task-meta">
-          <label class="dur"><input class="task-minutes" data-field="minutes" type="number" inputmode="numeric" min="1" max="600" value="${Math.round(t.minutes)}" aria-label="Durée prévue en minutes"><span>min</span></label>
+          <label class="dur"><input class="task-dur" data-field="duration" type="text" inputmode="decimal" autocomplete="off" value="${C.fmtTimer(Math.round(t.minutes * 60))}" aria-label="Durée prévue (mm:ss, ou hh:mm:ss)"></label>
           <span class="task-timer"></span>
           <button class="mini-reset" data-action="reset" title="Remettre le temps à zéro" aria-label="Remettre le temps à zéro" hidden>${icon("reset")}</button>
         </div>
@@ -379,7 +426,7 @@ function queueCard(t, i, n, minIdx) {
       <button class="play-mini" data-action="play" aria-label="Démarrer cette tâche" title="Démarrer">${icon("play")}</button>
     </div>
     <div class="quick-acts">
-      ${act("later", "later", "Plus tard")}${act("complete", "check", "Fait", "ok")}${act("delete", "trash", "Suppr.", "danger")}${act("menu", "edit", "Modifier")}
+      ${act("later", "later", "Plus tard")}${act("complete", "check", "Fait", "ok")}${act("delete", "trash", "Suppr.", "danger")}${act("insert", "plus", "Insérer")}${act("menu", "edit", "Modifier")}
     </div>
   </div>
 </li>`;
@@ -401,12 +448,50 @@ function milestoneItem(l, carrierId, ms) {
   </span>
 </li>`;
 }
+function insertRow(t) {
+  return `<li class="insert-row"><form class="insert-form" autocomplete="off">
+  <input type="text" placeholder="Insérer après « ${esc(t.title)} »… ex. Appel 10m" aria-label="Nouvelle tâche à insérer après « ${esc(t.title)} »" enterkeyhint="done">
+  <button type="submit" class="add-main" aria-label="Insérer">${icon("plus")}</button>
+  <button type="button" class="icon-btn" data-insert="close" aria-label="Fermer">${icon("x")}</button>
+</form></li>`;
+}
+function closeInsert(focusCard) {
+  const id = insertAfter;
+  insertAfter = null;
+  renderQueue();
+  if (focusCard) { const b = document.querySelector(`#taskList .task-card[data-id="${id}"] [data-action="insert"]`); if (b) b.focus(); }
+}
+$("taskList").addEventListener("submit", (e) => {
+  if (!e.target.closest(".insert-form")) return;
+  e.preventDefault();
+  const input = e.target.querySelector("input");
+  const l = cur(), after = insertAfter;
+  const next = C.addTask(state, l.id, { title: input.value }, { afterId: after });
+  if (next === state) { input.focus(); return; }
+  const i = next.lists.find((x) => x.id === l.id).tasks.findIndex((x) => x.id === after);
+  insertAfter = next.lists.find((x) => x.id === l.id).tasks[i + 1].id; // le champ suit la nouvelle tâche
+  input.value = "";
+  commit(next);
+});
+$("taskList").addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && e.target.closest(".insert-row")) { e.preventDefault(); e.stopPropagation(); closeInsert(true); }
+}, true);
+$("taskList").addEventListener("focusout", (e) => {
+  if (!e.target.closest(".insert-row")) return;
+  setTimeout(() => {
+    const row = $("taskList").querySelector(".insert-row");
+    if (row && !row.contains(document.activeElement) && !row.querySelector("input").value.trim()) closeInsert(false);
+  }, 150);
+});
 function renderQueue() {
   const el = $("taskList");
   const ae = document.activeElement;
-  if (drag || (ae && ae.tagName === "INPUT" && el.contains(ae))) { renderPending = true; return; }
+  const inInsert = !!(ae && ae.closest && ae.closest(".insert-row"));
+  if (drag || (ae && ae.tagName === "INPUT" && el.contains(ae) && !inInsert)) { renderPending = true; return; }
   renderPending = false;
   const l = cur();
+  const typed = inInsert ? ae.value : (el.querySelector(".insert-row input") || {}).value || "";
+  if (insertAfter && !l.tasks.some((x) => x.id === insertAfter)) insertAfter = null;
   const tasks = l.tasks;
   const minIdx = l.active ? 1 : 0;
   const parts = [];
@@ -414,9 +499,12 @@ function renderQueue() {
   tasks.slice(1).forEach((t, i) => {
     parts.push(queueCard(t, i, tasks.length, minIdx));
     if (Number.isFinite(t.finishByMs)) parts.push(milestoneItem(l, t.id, t.finishByMs));
+    if (t.id === insertAfter) parts.push(insertRow(t));
   });
   if (Number.isFinite(l.finishByMs) && tasks.length) parts.push(milestoneItem(l, null, l.finishByMs));
   el.innerHTML = parts.join("");
+  const ins = el.querySelector(".insert-row input");
+  if (ins) { ins.value = typed; if (inInsert || insertFocus) ins.focus({ preventScroll: !insertFocus }); insertFocus = false; }
   $("queueTitle").hidden = parts.length === 0;
   $("listEmpty").hidden = tasks.length > 0;
   $("addDeadline").hidden = tasks.length === 0;
@@ -490,6 +578,12 @@ function renderSettings() {
   $("setClock").value = s.clockStyle;
   $("setSoundType").value = s.soundType;
   $("setRoutineInsert").value = s.routineInsert;
+  $("setWarn").value = String(s.warnPercent);
+  $("alarmScopeRow").hidden = !isNative();
+  $("ongoingRow").hidden = !isNative();
+  $("batteryRow").hidden = !isNative();
+  $("setOngoing").checked = ongoingEnabled();
+  $("setAlarmScope").value = alarmScope();
   $("setAccent").querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.accent === s.accent)));
   if (document.activeElement !== $("setDefault")) $("setDefault").value = s.defaultMinutes;
   $("setTheme").value = s.theme;
@@ -498,14 +592,19 @@ function renderSettings() {
 // ------------------------------------------------------------ mise à jour fréquente
 function tick(fromRender) {
   const t = now();
-  if (!fromRender) {
+  if (!fromRender && alertsReady()) {
+    for (const w of C.warnDue(state, t)) {
+      if (warnedKeys.has(w.key)) continue;
+      warnedKeys.add(w.key);
+      onWarn(w);
+    }
     const a = C.advanceTimeUp(state, t);
     if (a.completed.length) {
       const find = (id) => state.lists.flatMap((l) => l.tasks).find((x) => x.id === id);
       const msgs = a.completed.map((c) => `✓ « ${(find(c.taskId) || {}).title || ""} » terminée`);
       const cleared = a.completed.map((c) => c.listId).filter((id, i, arr) => arr.indexOf(id) === i)
         .map((id) => C.getList(state, id)).filter((l) => l && C.isListCleared(a.state, l.id));
-      commit(a.state);
+      commit(a.state, { auto: true });
       cleared.forEach((l) => celebrate(l.name));
       showToast(msgs.join(" · "), false);
       a.completed.forEach(onTimeUp);
@@ -518,7 +617,7 @@ function tick(fromRender) {
         const task = l && l.tasks.find((x) => x.id === f.taskId);
         return `⏰ ${l ? l.name : ""} — « ${task ? task.title : ""} » : temps écoulé`;
       });
-      commit(r.state);
+      commit(r.state, { auto: true });
       showToast(msgs.join(" · "), false);
       r.fired.forEach(onTimeUp);
       return;
@@ -570,7 +669,7 @@ function tick(fromRender) {
     setText($("nowEta"), slot ? `fin ≈ ${C.fmtClock(slot.endAtMs)}` : "");
     const style = state.settings.clockStyle;
     const mc = $("nowClock");
-    $("nowClockBox").className = `clock-box ${style}`;
+    $("nowClockBox").className = `clock-box ${style}${isAct && C.inWarnZone(state, head.id, t) ? " warn" : ""}`;
     mc.setAttribute("class", `clock-svg ${style}`);
     mc.style.display = style === "digital" ? "none" : "";
     $("nowProgress").hidden = style !== "digital";
@@ -605,7 +704,7 @@ function tick(fromRender) {
       adj.className = "adj";
       li.querySelector(".dur").after(adj);
     } else if (!squeezed && adj) { adj.remove(); adj = null; }
-    if (adj) setText(adj, C.fmtDuration(Math.max(0, Math.round(slot.budgetSec / 60))));
+    if (adj) setText(adj, C.fmtTimer(Math.max(0, C.shownSec(slot.budgetSec))));
   });
   // jalons : prévu, disponible, écart
   document.querySelectorAll("#taskList .milestone").forEach((li) => {
@@ -652,7 +751,7 @@ function renderFocus(list, t) {
   $("focusTimer").setAttribute("aria-label", `Temps restant ${C.fmtTimer(rem)} — modifier`);
   const frac = rem > 0 && budget > 0 ? Math.min(1, rem / budget) : 0;
   const style = state.settings.clockStyle;
-  $("focusClock").className = `ring-wrap ${style}`;
+  $("focusClock").className = `ring-wrap ${style}${C.inWarnZone(state, act.id, t) ? " warn" : ""}`;
   $("focusPie").toggleAttribute("hidden", style !== "pie");
   $("focusRingSvg").style.display = style === "ring" ? "" : "none";
   if (style === "pie") setDial($("pieWedge"), rem);
@@ -712,10 +811,10 @@ function soundChain(ctx) {
   master.connect(ctx.destination);
   return input;
 }
-function scheduleSound(ctx, dest, type, t0) {
+function scheduleSound(ctx, dest, type, t0, volume = 1) {
   const def = SOUND_DEFS[type] || SOUND_DEFS.chime;
   const out = ctx.createGain();
-  out.gain.value = def.level;
+  out.gain.value = def.level * volume;
   out.connect(dest);
   for (const n of def.notes) {
     for (const [ratio, g, dk] of n.p) {
@@ -733,13 +832,13 @@ function scheduleSound(ctx, dest, type, t0) {
   }
 }
 let liveChain = null;
-function playSound(type) {
+function playSound(type, volume = 1) {
   window.__sablierLastSound = type;
   if (!audioCtx) return;
   try {
     if (audioCtx.state === "suspended") audioCtx.resume();
     if (!liveChain) liveChain = soundChain(audioCtx);
-    scheduleSound(audioCtx, liveChain, type, audioCtx.currentTime + 0.03);
+    scheduleSound(audioCtx, liveChain, type, audioCtx.currentTime + 0.03, volume);
   } catch { /* son indisponible */ }
 }
 // Outils de vérification (utilisés par les tests).
@@ -780,6 +879,12 @@ window.__sablierRenderPeaks = async () => {
   }
   return out;
 };
+function onWarn(w) {
+  window.__sablierWarns++;
+  if (state.settings.sound) playSound(state.settings.soundType, 0.45);
+  const l = C.getList(state, w.listId), task = l && l.tasks.find((x) => x.id === w.taskId);
+  if (l && l.id !== cur().id) showToast(`⏳ ${l.name} — « ${task ? task.title : ""} » : bientôt fini`, false);
+}
 function onTimeUp() {
   window.__sablierChimes++;
   if (state.settings.sound) playSound(state.settings.soundType);
@@ -987,6 +1092,7 @@ $("quickAdd").addEventListener("keydown", (e) => { if (e.key === "Enter" && e.sh
 
 // file « À suivre »
 $("taskList").addEventListener("click", (e) => {
+  if (e.target.closest("[data-insert=close]")) { closeInsert(true); return; }
   const mb = e.target.closest(".milestone button[data-ms]");
   if (mb) {
     const l = cur(), carrier = mb.closest(".milestone").dataset.task || null;
@@ -1004,6 +1110,7 @@ $("taskList").addEventListener("click", (e) => {
   const id = b.closest(".task-card").dataset.id;
   if (b.dataset.action === "play") { unlockAudio(); commit(C.startTask(state, cur().id, id, now())); }
   if (b.dataset.action === "menu") openTaskSheet(id);
+  if (b.dataset.action === "insert") { insertAfter = id; insertFocus = true; renderQueue(); }
   if (b.dataset.action === "top") commit(C.moveTaskToEdge(state, id, "top"));
   if (b.dataset.action === "bottom") commit(C.moveTaskToEdge(state, id, "bottom"));
   if (b.dataset.action === "up") commit(C.moveTask(state, id, -1));
@@ -1020,9 +1127,12 @@ $("taskList").addEventListener("change", (e) => {
   const el = e.target, field = el.dataset.field;
   if (!field) return;
   const id = el.closest(".task-card").dataset.id;
-  commit(C.updateTask(state, id, { [field]: el.value }));
+  if (field === "duration") {
+    const sec = C.parseDurationInput(el.value);
+    if (sec !== null) commit(C.updateTask(state, id, { durationSec: sec }));
+  } else commit(C.updateTask(state, id, { [field]: el.value }));
   const t = cur().tasks.find((x) => x.id === id);
-  const shown = t && (field === "minutes" ? String(Math.round(t.minutes)) : t[field]);
+  const shown = t && (field === "duration" ? C.fmtTimer(Math.round(t.minutes * 60)) : t[field]);
   if (t && shown !== el.value) el.value = shown;
 });
 $("taskList").addEventListener("keydown", (e) => {
@@ -1031,7 +1141,7 @@ $("taskList").addEventListener("keydown", (e) => {
   if (e.key === "Enter") { e.preventDefault(); e.target.blur(); }
   if (e.key === "Escape") {
     const t = cur().tasks.find((x) => x.id === e.target.closest(".task-card").dataset.id);
-    if (t) e.target.value = f === "minutes" ? Math.round(t.minutes) : t[f];
+    if (t) e.target.value = f === "duration" ? C.fmtTimer(Math.round(t.minutes * 60)) : t[f];
     e.target.blur();
     e.stopPropagation();
   }
@@ -1041,17 +1151,36 @@ $("taskList").addEventListener("focusout", () => { setTimeout(() => { if (render
 // glisser-déposer (souris, tactile, stylet)
 $("taskList").addEventListener("pointerdown", (e) => {
   const h = e.target.closest(".drag-handle, .ms-main");
-  if (!h) return;
+  if (!h || e.button > 0) return;
   const li = h.closest(".task-card, .milestone");
-  drag = { li, pointerId: e.pointerId, y0: e.clientY, moved: false };
-  li.classList.add("dragging");
+  drag = { li, pointerId: e.pointerId, y0: e.clientY, moved: false, grabDy: e.clientY - li.getBoundingClientRect().top };
   try { h.setPointerCapture(e.pointerId); } catch { /* ignore */ }
   e.preventDefault();
 });
+const reduceMotion = () => window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+// Déplace `li` avant `ref` (ou à la fin) en animant les autres cartes depuis leur position visible (FLIP).
+function moveWithAnimation(list, li, ref) {
+  const sibs = [...list.children].filter((x) => x !== li);
+  const before = new Map(sibs.map((x) => [x, x.getBoundingClientRect().top]));
+  if (ref) list.insertBefore(li, ref); else list.appendChild(li);
+  if (reduceMotion()) return;
+  sibs.forEach((x) => { x.style.transition = "none"; x.style.transform = ""; });
+  const after = sibs.map((x) => x.getBoundingClientRect().top);
+  sibs.forEach((x, i) => { const dy = before.get(x) - after[i]; if (Math.abs(dy) > 0.5) x.style.transform = `translateY(${dy}px)`; });
+  void list.offsetHeight;
+  sibs.forEach((x) => { if (x.style.transform) { x.style.transition = "transform .18s ease"; x.style.transform = ""; } else x.style.transition = ""; });
+}
+// La carte tenue suit le doigt.
+function followPointer(clientY) {
+  const li = drag.li;
+  li.style.transform = "";
+  const top = li.getBoundingClientRect().top;
+  li.style.transform = `translateY(${(clientY - drag.grabDy - top).toFixed(1)}px) scale(1.02)`;
+}
 window.addEventListener("pointermove", (e) => {
   if (!drag || e.pointerId !== drag.pointerId) return;
   if (!drag.moved && Math.abs(e.clientY - drag.y0) < 6) return; // simple toucher, pas encore un glisser
-  drag.moved = true;
+  if (!drag.moved) { drag.moved = true; drag.li.classList.add("dragging"); $("taskList").classList.add("is-dragging"); }
   // défilement automatique près des bords pendant le glisser
   const mr = $("main").getBoundingClientRect();
   if (e.clientY < mr.top + 56) $("main").scrollTop -= 14;
@@ -1060,13 +1189,17 @@ window.addEventListener("pointermove", (e) => {
   const hr = hero.getBoundingClientRect();
   drag.promote = !drag.li.classList.contains("milestone") && !hero.hidden && e.clientY <= hr.bottom + 8;
   hero.classList.toggle("drop-target", drag.promote);
-  if (drag.promote) return;
-  const list = $("taskList");
-  for (const sib of [...list.children].filter((x) => x !== drag.li)) {
-    const r = sib.getBoundingClientRect();
-    if (e.clientY < r.top + r.height / 2) { if (drag.li.nextSibling !== sib) list.insertBefore(drag.li, sib); return; }
+  if (!drag.promote) {
+    const list = $("taskList");
+    let ref = null;
+    for (const sib of [...list.children].filter((x) => x !== drag.li)) {
+      const r = sib.getBoundingClientRect();
+      const mid = r.top + r.height / 2 - (parseFloat((sib.style.transform.match(/translateY\((-?[\d.]+)px/) || [])[1]) || 0);
+      if (e.clientY < mid) { ref = sib; break; }
+    }
+    if (ref ? drag.li.nextSibling !== ref : list.lastElementChild !== drag.li) moveWithAnimation(list, drag.li, ref);
   }
-  if (list.lastElementChild !== drag.li) list.appendChild(drag.li);
+  followPointer(e.clientY);
 });
 function endDrag(e) {
   if (!drag || (e && e.pointerId !== drag.pointerId)) return;
@@ -1074,6 +1207,8 @@ function endDrag(e) {
   const ids = (l.tasks[0] ? [l.tasks[0].id] : []).concat([...$("taskList").querySelectorAll(".task-card")].map((x) => x.dataset.id));
   const { li, promote, moved } = drag;
   li.classList.remove("dragging");
+  $("taskList").classList.remove("is-dragging");
+  [...$("taskList").children].forEach((x) => { x.style.transform = ""; x.style.transition = ""; });
   $("nowCard").classList.remove("drop-target");
   drag = null;
   if (li.classList.contains("milestone")) {
@@ -1174,7 +1309,7 @@ function openTaskSheet(id, { emoji = false } = {}) {
   document.querySelector("#taskSheet .ts-edit").after($("emojiPicker"));
   sheetTaskId = id;
   $("tsTitle").value = t.title;
-  $("tsMinutes").value = Math.round(t.minutes);
+  $("tsDuration").value = C.fmtTimer(Math.round(t.minutes * 60));
   $("tsFinishBy").value = Number.isFinite(t.finishByMs) ? C.fmtClock(t.finishByMs) : "";
   sheetEmoji = t.emoji;
   $("tsEmojiPreview").textContent = t.emoji;
@@ -1202,7 +1337,10 @@ function saveTaskSheet() {
   const patch = { title: $("tsTitle").value };
   if (t && sheetEmoji !== t.emoji) patch.emoji = sheetEmoji;
   if (t && sheetEmoji !== t.emoji) pushRecent(sheetEmoji);
-  if (!t || String(Math.round(t.minutes)) !== $("tsMinutes").value) patch.minutes = $("tsMinutes").value;
+  if (t && C.fmtTimer(Math.round(t.minutes * 60)) !== $("tsDuration").value.trim()) {
+    const sec = C.parseDurationInput($("tsDuration").value);
+    if (sec !== null) patch.durationSec = sec;
+  }
   const fb = $("tsFinishBy").value;
   const had = t && Number.isFinite(t.finishByMs) ? C.fmtClock(t.finishByMs) : "";
   closeSheets();
@@ -1213,7 +1351,7 @@ function saveTaskSheet() {
 $("tsSave").addEventListener("click", saveTaskSheet);
 $("tsFinishClear").addEventListener("click", () => { $("tsFinishBy").value = ""; $("tsFinishBy").focus(); });
 $("tsFinishBy").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); saveTaskSheet(); } });
-[$("tsTitle"), $("tsMinutes")].forEach((el) => el.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); saveTaskSheet(); } }));
+[$("tsTitle"), $("tsDuration")].forEach((el) => el.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); saveTaskSheet(); } }));
 $("taskSheet").addEventListener("click", (e) => {
   const b = e.target.closest("[data-ts]");
   if (!b || !sheetTaskId) return;
@@ -1253,6 +1391,23 @@ $("setAccent").addEventListener("click", (e) => { const b = e.target.closest("[d
 $("setAutoAdvance").addEventListener("change", (e) => commit(C.updateSettings(state, { autoAdvance: e.target.checked })));
 $("setClock").addEventListener("change", (e) => commit(C.updateSettings(state, { clockStyle: e.target.value })));
 $("setRoutineInsert").addEventListener("change", (e) => commit(C.updateSettings(state, { routineInsert: e.target.value })));
+$("setWarn").addEventListener("change", (e) => commit(C.updateSettings(state, { warnPercent: e.target.value })));
+$("setOngoing").addEventListener("change", (e) => {
+  try { localStorage.setItem("sablier.ongoing", e.target.checked ? "on" : "off"); } catch { /* indisponible */ }
+  syncOngoing(state, now(), { enabled: ongoingEnabled() });
+});
+async function renderBattery() {
+  if (!isNative()) return;
+  const st = await batteryStatus();
+  $("batteryState").textContent = !st ? "" : st.unrestricted ? "Non restreinte : la synchro continue aussi en veille ✓" : "Restreinte : en veille prolongée, la synchro peut prendre du retard";
+  $("batteryBtn").hidden = !st || st.unrestricted;
+}
+$("batteryBtn").addEventListener("click", () => { openBatterySettings(); setTimeout(renderBattery, 1500); });
+document.addEventListener("visibilitychange", () => { if (!document.hidden) renderBattery(); });
+$("setAlarmScope").addEventListener("change", (e) => {
+  try { localStorage.setItem("sablier.alarmScope", e.target.value); } catch { /* indisponible */ }
+  syncAlarms(state, now(), alarmOpts());
+});
 $("setShowDone").addEventListener("change", (e) => commit(C.updateSettings(state, { showDone: e.target.checked })));
 $("listBar").addEventListener("click", (e) => {
   const c = e.target.closest(".list-chip");
@@ -1394,7 +1549,7 @@ function renderEditorItems() {
   <span class="re-num">${i + 1}</span>
   <button type="button" class="re-emoji" data-action="emoji" aria-label="Changer l'emoji de l'étape" title="Changer l'emoji">${esc(it.emoji || "🧠")}</button>
   <input class="re-title" data-f="title" value="${esc(it.title)}" aria-label="Titre de l'étape">
-  <label class="min-chip"><input class="re-min" data-f="minutes" type="number" inputmode="numeric" min="1" max="600" value="${esc(it.minutes)}" aria-label="Durée"><span>min</span></label>
+  <input class="re-dur" data-f="dur" type="text" inputmode="decimal" autocomplete="off" value="${C.fmtTimer(Math.round((parseInt(it.minutes, 10) || 1) * 60))}" aria-label="Durée de l'étape (mm:ss, ou hh:mm:ss)">
   <span class="re-tools">
     <button class="icon-btn" data-action="up" aria-label="Monter"${i === 0 ? " disabled" : ""}>${icon("up")}</button>
     <button class="icon-btn" data-action="down" aria-label="Descendre"${i === n - 1 ? " disabled" : ""}>${icon("down")}</button>
@@ -1414,8 +1569,16 @@ $("reItems").addEventListener("input", (e) => {
       li.querySelector(".re-emoji").textContent = it.emoji;
     }
   }
-  it[f] = e.target.value;
+  if (f === "dur") {
+    const sec = C.parseDurationInput(e.target.value);
+    if (sec !== null) it.minutes = Math.max(1, Math.min(600, Math.round(sec / 60)));
+  } else it[f] = e.target.value;
   editorTotal();
+});
+$("reItems").addEventListener("change", (e) => {
+  if (!e.target.classList.contains("re-dur")) return;
+  const it = draft.items[+e.target.closest(".re-item").dataset.i];
+  e.target.value = C.fmtTimer(Math.round((parseInt(it.minutes, 10) || 1) * 60));
 });
 $("reItems").addEventListener("click", (e) => {
   const b = e.target.closest("button[data-action]"); if (!b) return;
@@ -1743,7 +1906,16 @@ setInterval(() => tick(false), 250);
 document.addEventListener("visibilitychange", () => { if (!document.hidden) tick(false); });
 initRemote();
 setupAlarms();
-syncAlarms(state, now());
+// Boutons de la notification « minuteur en cours » (appli Android).
+setupOngoing(({ action, listId }) => {
+  const l = C.getList(state, listId) || cur();
+  if (!l) return;
+  if (action === "pause") commit(C.pauseTask(state, l.id, now()));
+  if (action === "done") completeIn(l.id);
+});
+renderBattery();
+syncAlarms(state, now(), alarmOpts());
+syncOngoing(state, now(), { enabled: ongoingEnabled() });
 loadEmojiData();
 // Appli installable (hors de Claude et hors appli Android) : service worker pour le hors-ligne.
 if ("serviceWorker" in navigator && !window.claude && !isNative() && location.protocol.startsWith("http")) {

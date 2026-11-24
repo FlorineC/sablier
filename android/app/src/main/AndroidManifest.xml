@@ -24,6 +24,17 @@
 
         </activity>
 
+        <!-- Sablier : notification permanente pendant qu'un minuteur tourne (garde la synchro active) -->
+        <service
+            android:name=".TimerService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Minuteur de tâche en cours : affiche le décompte et garde la synchronisation active pour mettre à jour les alarmes" />
+        </service>
+        <receiver android:name=".TimerActionReceiver" android:exported="false" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
@@ -40,4 +51,10 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Sablier : alarmes exactes de fin de tâche (minuteur), sans demander d'autorisation à l'utilisateur -->
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+    <!-- Sablier : minuteur en cours affiché en permanence (service de premier plan) -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <!-- Sablier : proposer de ne pas restreindre la batterie (synchro pendant la veille) -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 </manifest>

@@ -15,8 +15,9 @@ const LEGACY_SOUNDS = { gong: "bowl", beep: "harp" };
 const ROUTINE_INSERT = ["bottom", "top"];
 export const DEFAULT_SETTINGS = Object.freeze({
   sound: true, autoStartNext: true, defaultMinutes: 25, theme: "auto", showDone: false,
-  clockStyle: "ring", accent: "green", autoAdvance: false, routineInsert: "bottom", soundType: "chime",
+  clockStyle: "ring", accent: "green", autoAdvance: false, routineInsert: "bottom", soundType: "chime", warnPercent: 0,
 });
+export const WARN_PERCENTS = [0, 10, 20, 25, 33, 50];
 const THEMES = ["auto", "light", "dark"];
 const DEFAULT_EMOJI = "🧠";
 const MAIN_LIST_ID = "main";
@@ -78,6 +79,7 @@ function normalizeSettings(raw) {
     autoAdvance: typeof r.autoAdvance === "boolean" ? r.autoAdvance : DEFAULT_SETTINGS.autoAdvance,
     routineInsert: ROUTINE_INSERT.includes(r.routineInsert) ? r.routineInsert : DEFAULT_SETTINGS.routineInsert,
     soundType: SOUNDS.includes(r.soundType) ? r.soundType : LEGACY_SOUNDS[r.soundType] || DEFAULT_SETTINGS.soundType,
+    warnPercent: WARN_PERCENTS.includes(Number(r.warnPercent)) ? Number(r.warnPercent) : DEFAULT_SETTINGS.warnPercent,
   };
 }
 
@@ -113,6 +115,7 @@ function normalizeActive(list, rawActive) {
   const a = rawActive;
   if (a && typeof a === "object" && list.tasks.some((t) => t.id === a.taskId)) {
     list.active = { taskId: a.taskId, startedAtMs: Number.isFinite(a.startedAtMs) ? a.startedAtMs : null };
+    if (typeof a.startedBy === "string" && a.startedBy) list.active.startedBy = a.startedBy;
     pinActive(list);
   }
 }
@@ -355,7 +358,7 @@ export function setCurrentList(state, listId) {
 }
 
 // ---------------------------------------------------------------- tâches
-export function addTask(state, listId, { title, minutes, emoji } = {}, { position = "bottom" } = {}) {
+export function addTask(state, listId, { title, minutes, emoji } = {}, { position = "bottom", afterId = null } = {}) {
   const parsed = parseQuickAdd(title);
   if (!parsed.title || !getList(state, listId)) return state;
   const mins = toMinutes(minutes) ?? parsed.minutes;
@@ -369,7 +372,9 @@ export function addTask(state, listId, { title, minutes, emoji } = {}, { positio
     spentSec: 0,
   };
   // « En haut » : juste après la tâche en cours, sinon en tête (devient la prochaine).
-  if (position === "top") list.tasks.splice(list.active ? 1 : 0, 0, task);
+  const after = afterId ? list.tasks.findIndex((t) => t.id === afterId) : -1;
+  if (after >= 0) list.tasks.splice(after + 1, 0, task);
+  else if (position === "top") list.tasks.splice(list.active ? 1 : 0, 0, task);
   else list.tasks.push(task);
   return s;
 }
@@ -385,6 +390,10 @@ export function updateTask(state, taskId, patch = {}) {
     if (v) t.title = v;
   }
   if ("minutes" in patch) { const m = toMinutes(patch.minutes); if (m !== null) t.minutes = m; }
+  if ("durationSec" in patch) {
+    const d = Number(patch.durationSec);
+    if (Number.isFinite(d) && d >= 1) t.minutes = clamp(Math.round((d / 60) * 1e4) / 1e4, 1 / 60, MAX_MINUTES);
+  }
   if ("emoji" in patch) t.emoji = String(patch.emoji ?? "").trim() || suggestEmoji(t.title);
   return s;
 }
@@ -642,7 +651,9 @@ function completeInternal(state, listId, now, taskId, forceStart) {
   if (wasActive) {
     const next = list.tasks[0];
     const startNext = wasRunning && (forceStart ?? s.settings.autoStartNext);
+    const by = list.active && list.active.startedBy;
     list.active = next ? { taskId: next.id, startedAtMs: startNext ? now : null } : null;
+    if (list.active && by) list.active.startedBy = by;
   }
   return s;
 }
@@ -657,7 +668,9 @@ export function skipTask(state, listId, now) {
   const idx = list.tasks.findIndex((t) => t.id === list.active.taskId);
   const [t] = list.tasks.splice(idx, 1);
   list.tasks.push(t);
+  const by = list.active.startedBy;
   list.active = { taskId: list.tasks[0].id, startedAtMs: wasRunning ? now : null };
+  if (by) list.active.startedBy = by;
   return s;
 }
 
@@ -844,6 +857,7 @@ export function updateSettings(state, patch = {}) {
   if (typeof patch.autoAdvance === "boolean") cur.autoAdvance = patch.autoAdvance;
   if (ROUTINE_INSERT.includes(patch.routineInsert)) cur.routineInsert = patch.routineInsert;
   if (SOUNDS.includes(patch.soundType)) cur.soundType = patch.soundType;
+  if ("warnPercent" in patch && WARN_PERCENTS.includes(Number(patch.warnPercent))) cur.warnPercent = Number(patch.warnPercent);
   return s;
 }
 
@@ -866,7 +880,7 @@ export function fmtTimer(totalSec) {
   let v = Math.abs(Math.round(totalSec));
   const h = Math.floor(v / 3600); v -= h * 3600;
   const m = Math.floor(v / 60), sec = v % 60;
-  const body = h ? `${h}:${pad2(m)}:${pad2(sec)}` : `${pad2(m)}:${pad2(sec)}`;
+  const body = h ? `${pad2(h)}:${pad2(m)}:${pad2(sec)}` : `${pad2(m)}:${pad2(sec)}`;
   return neg ? "+" + body : body;
 }
 
@@ -917,39 +931,120 @@ function hashId(str) {
 }
 // Alarmes à programmer : fin de la tâche en cours de chaque liste qui tourne,
 // et des tâches suivantes quand le passage automatique est activé.
-export function upcomingAlarms(state, now) {
+export function upcomingAlarms(state, now, { deviceId = null, onlyMine = false } = {}) {
   const out = [];
+  const pct = state.settings.warnPercent || 0;
   for (const l of state.lists) {
     if (!listRunning(l)) continue;
+    if (onlyMine && l.active.startedBy !== deviceId) continue;
     const head = l.tasks.find((x) => x.id === l.active.taskId);
+    let chain; // [{ t, end, budget }]
     if (hasDeadlines(l)) {
       const p = plan(state, l.id, now).tasks;
-      const chain = state.settings.autoAdvance ? p : p.filter((x) => x.taskId === head.id);
-      for (const x of chain) {
-        const t = l.tasks.find((y) => y.id === x.taskId);
-        const end = Math.round((now + x.adjustedSec * 1000) / 1000) * 1000;
-        const at = x.taskId === head.id ? end : Math.round(x.endAtMs / 1000) * 1000;
-        if (at > now) out.push({ id: hashId(l.id + "|" + t.id), listId: l.id, listName: l.name, taskId: t.id, title: t.title, emoji: t.emoji, atMs: at });
-      }
-      continue;
-    }
-    // fin exacte de la tâche en cours (indépendante de l'instant du calcul)
-    let cursor = l.active.startedAtMs + (totalSec(head) - head.spentSec) * 1000;
-    const chain = [{ t: head, end: cursor }];
-    if (state.settings.autoAdvance) {
-      cursor = Math.max(cursor, now);
-      for (const t of l.tasks) {
-        if (t.id === head.id) continue;
-        cursor += Math.max(0, totalSec(t) - t.spentSec) * 1000;
-        chain.push({ t, end: cursor });
+      chain = (state.settings.autoAdvance ? p : p.filter((x) => x.taskId === head.id)).map((x) => ({
+        t: l.tasks.find((y) => y.id === x.taskId),
+        end: x.taskId === head.id ? Math.round((now + x.adjustedSec * 1000) / 1000) * 1000 : Math.round(x.endAtMs / 1000) * 1000,
+        budget: x.budgetSec,
+      }));
+    } else {
+      // fin exacte de la tâche en cours (indépendante de l'instant du calcul)
+      let cursor = l.active.startedAtMs + (totalSec(head) - head.spentSec) * 1000;
+      chain = [{ t: head, end: cursor, budget: totalSec(head) }];
+      if (state.settings.autoAdvance) {
+        cursor = Math.max(cursor, now);
+        for (const t of l.tasks) {
+          if (t.id === head.id) continue;
+          cursor += Math.max(0, totalSec(t) - t.spentSec) * 1000;
+          chain.push({ t, end: cursor, budget: totalSec(t) });
+        }
       }
     }
-    for (const { t, end } of chain) {
-      if (end <= now) continue;
-      out.push({ id: hashId(l.id + "|" + t.id), listId: l.id, listName: l.name, taskId: t.id, title: t.title, emoji: t.emoji, atMs: end });
+    for (const { t, end, budget } of chain) {
+      const base = { listId: l.id, listName: l.name, taskId: t.id, title: t.title, emoji: t.emoji };
+      if (pct > 0) {
+        const at = Math.round(end - (budget * pct) / 100 * 1000);
+        if (at > now) out.push({ ...base, kind: "warn", id: hashId(l.id + "|" + t.id + "|warn"), atMs: at, leftMin: Math.round((budget * pct) / 100 / 60) });
+      }
+      if (end > now) out.push({ ...base, kind: "end", id: hashId(l.id + "|" + t.id), atMs: end });
     }
   }
   return out;
+}
+
+// Notification permanente de l'appli Android : la liste qui tourne et finit le plus tôt.
+export function ongoingInfo(state, now) {
+  const items = state.lists.filter(listRunning).map((l) => {
+    const t = l.tasks.find((x) => x.id === l.active.taskId);
+    let end;
+    if (hasDeadlines(l)) {
+      const x = plan(state, l.id, now).tasks.find((y) => y.taskId === t.id);
+      end = Math.round((now + (x ? x.adjustedSec : 0) * 1000) / 1000) * 1000;
+    } else end = l.active.startedAtMs + (totalSec(t) - t.spentSec) * 1000;
+    return { l, t, end };
+  }).sort((a, b) => a.end - b.end);
+  if (!items.length) return null;
+  const { l, t, end } = items[0];
+  const more = items.length - 1;
+  return { listId: l.id, title: `${t.emoji} ${t.title}`, text: l.name + (more ? ` · +${more} autre${more > 1 ? "s" : ""} liste${more > 1 ? "s" : ""}` : ""), endAtMs: end };
+}
+
+// Appareil qui a lancé le minuteur d'une liste (pour « alarmes seulement pour mes tâches »).
+export function markStartedBy(state, listId, deviceId) {
+  const l = getList(state, listId);
+  if (!l || !l.active || !deviceId || l.active.startedBy === deviceId) return state;
+  const s = clone(state);
+  getList(s, listId).active.startedBy = deviceId;
+  return s;
+}
+
+// Avertissement avant la fin : tâches en cours entrées dans les derniers `warnPercent` % de leur durée.
+function warnInfo(state, l, now) {
+  const head = l.tasks.find((x) => x.id === l.active.taskId);
+  if (!head) return null;
+  if (hasDeadlines(l)) {
+    const x = plan(state, l.id, now).tasks.find((y) => y.taskId === head.id);
+    return x ? { head, rem: x.adjustedSec, budget: x.budgetSec } : null;
+  }
+  return { head, rem: remainingSec(state, head.id, now), budget: totalSec(head) };
+}
+export function inWarnZone(state, taskId, now) {
+  const pct = state.settings.warnPercent || 0;
+  const loc = locate(state, taskId);
+  if (!pct || !loc || !loc.list.active || loc.list.active.taskId !== taskId) return false;
+  const w = warnInfo(state, loc.list, now);
+  return !!w && w.rem > 0 && w.rem <= (w.budget * pct) / 100;
+}
+export function warnDue(state, now) {
+  const out = [];
+  if (!(state.settings.warnPercent > 0)) return out;
+  for (const l of state.lists) {
+    if (!listRunning(l) || !inWarnZone(state, l.active.taskId, now)) continue;
+    const w = warnInfo(state, l, now);
+    out.push({ listId: l.id, taskId: w.head.id, key: `${l.id}|${w.head.id}|${Math.round(w.budget)}` });
+  }
+  return out;
+}
+
+// Garde, dans un état distant reçu, les signaux de fin déjà donnés sur cet appareil.
+export function carryLocalFlags(local, remote) {
+  if (!local || !remote) return remote;
+  let changed = false;
+  const lists = remote.lists.map((rl) => {
+    const ll = local.lists.find((x) => x.id === rl.id);
+    if (ll && rl.active && ll.alertedTaskId === rl.active.taskId && rl.alertedTaskId !== ll.alertedTaskId) { changed = true; return { ...rl, alertedTaskId: ll.alertedTaskId }; }
+    return rl;
+  });
+  return changed ? { ...remote, lists } : remote;
+}
+
+// Saisie d'une durée : « 25 » (min), « 25:00 », « 1:30:00 », « 1h30 », « 15m » → secondes.
+export function parseDurationInput(input) {
+  const str = String(input ?? "").trim();
+  if (!str) return null;
+  const c = parseClock(str);
+  if (c !== null) return c;
+  const m = parseDuration(str);
+  return m !== null && m !== undefined ? Math.round(m * 60) : null;
 }
 
 // ---------------------------------------------------------------- export / import

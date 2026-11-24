@@ -617,3 +617,47 @@ kbd{display:inline-block;min-width:24px;text-align:center;font-family:var(--font
 .focus-timer{border:none;background:transparent;color:inherit}
 @media (prefers-reduced-motion: reduce){.focus-card.back,.focus-card.leaving{transition:none}}
 .ts-finish .icon-btn{flex:0 0 auto}
+
+/* =========================================================================
+   v16 — durées au format minuteur, glisser animé, insertion, avertissement
+   ========================================================================= */
+/* durée prévue (carte, fiche, éditeur de routine) */
+.dur input.task-dur,.re-dur,.dur-input{font-family:var(--font-display);font-weight:700;font-variant-numeric:tabular-nums;text-align:center;
+  border:1px solid var(--border);border-radius:10px;background:var(--bg);min-height:40px;padding:0 6px;color:var(--ink)}
+.dur input.task-dur{width:calc(8ch + 16px);font-size:15px}
+.dur input.task-dur:hover,.re-dur:hover{border-color:var(--ink-faint)}
+.dur input.task-dur:focus,.re-dur:focus,.dur-input:focus{border-color:var(--accent);outline:none;box-shadow:0 0 0 2px var(--accent-soft)}
+.task-card.compressed .dur input.task-dur{text-decoration:line-through;text-decoration-color:var(--ink-muted);color:var(--ink-muted)}
+.re-dur{width:calc(8ch + 16px);font-size:15px;min-height:var(--tap)}
+.ts-edit .dur-input{flex:0 0 auto;width:calc(8ch + 22px);min-height:50px;font-size:17px;border-radius:14px}
+
+/* glisser-déposer : la carte tenue suit le doigt, les autres glissent */
+.task-card.dragging,.milestone.dragging{opacity:.82;z-index:5;box-shadow:0 14px 36px rgba(0,0,0,.22);transition:none!important;cursor:grabbing;will-change:transform}
+ul.task-list.is-dragging > li:not(.dragging){will-change:transform}
+
+/* insertion après une carte */
+.insert-row{list-style:none}
+.insert-form{display:flex;gap:8px;align-items:center;padding:6px;border:1.5px dashed var(--accent);border-radius:var(--radius-sm);background:var(--accent-soft)}
+.insert-form input{flex:1 1 auto;min-width:0;min-height:44px;border:1px solid var(--border);background:var(--surface);border-radius:12px;padding:0 12px}
+.insert-form .add-main{border:none;border-radius:12px;width:44px;min-height:44px;background:var(--accent);color:var(--accent-ink);display:inline-flex;align-items:center;justify-content:center;padding:0;flex:0 0 auto}
+.insert-form .icon-btn{flex:0 0 auto}
+@media (max-width:370px){.quick-acts button span{display:none}}
+
+/* avertissement avant la fin */
+.clock-box.warn .ring-progress,.ring-wrap.warn .ring-progress{stroke:var(--warn)}
+.clock-box.warn .pie-wedge,.ring-wrap.warn .pie-wedge{fill:var(--warn)}
+.clock-box.warn .now-timer,.ring-wrap.warn .focus-timer{color:var(--warn)}
+.clock-box.warn ~ .progress .bar,.now-card:has(.clock-box.warn) #nowProgress .bar{background:var(--warn)}
+
+/* vue maximisée : les boutons du bas tiennent toujours dans l'écran */
+.focus-actions{display:flex;align-items:center;gap:10px;width:100%;max-width:440px;padding:0 4px}
+.focus-actions .round-btn{flex:0 0 auto;width:54px;height:54px}
+.focus-actions .big-btn{flex:1 1 0;min-width:56px;padding:0 14px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;display:inline-flex;align-items:center;justify-content:center;gap:8px}
+.focus-actions .big-btn span{overflow:hidden;text-overflow:ellipsis}
+@media (max-width:360px){
+  .focus-actions{gap:8px}
+  .focus-actions .round-btn{width:48px;height:48px}
+  .focus-actions .big-btn span{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+}
+.focus-actions .big-btn{position:relative}
+.dur input.task-dur,.re-dur{font-size:16px}
