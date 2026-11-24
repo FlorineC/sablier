@@ -99,6 +99,7 @@ let listSheetMode = "create";
 let routineMenuId = null;
 let draft = null; // routine en cours d'édition
 let drag = null;
+let pickerStep = null; // étape de routine dont on choisit l'emoji (null : fiche tâche)
 let dlCarrier; // jalon en cours d'édition : id de la tâche, null = fin de liste, "new" = nouveau
 let launchRoutineId = null, launchMode = "now";
 window.__sablierChimes = 0;
@@ -812,7 +813,7 @@ function showToast(msg, withUndo) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => { $("toast").hidden = true; undoState = null; }, withUndo ? 6000 : 5000);
 }
-const SHEETS = ["taskSheet", "listSheet", "routineMenu", "confirmSheet", "dataSheet", "deadlineSheet", "launchSheet", "shortcutsSheet"];
+const SHEETS = ["taskSheet", "listSheet", "routineMenu", "confirmSheet", "dataSheet", "deadlineSheet", "launchSheet", "shortcutsSheet", "emojiSheet"];
 let sheetReturnFocus = null;
 // Fenêtres accessibles : le focus entre dans la fenêtre, y reste (Tab boucle), et revient d'où il venait.
 function openSheet(id) {
@@ -827,7 +828,7 @@ function closeSheets() {
   const ae = document.activeElement;
   if (ae && ae.closest && ae.closest(".scrim")) ae.blur(); // sinon le champ masqué garde le clavier
   SHEETS.forEach((id) => { $(id).hidden = true; });
-  confirmAction = null; sheetTaskId = null; routineMenuId = null; dlCarrier = undefined; launchRoutineId = null;
+  confirmAction = null; sheetTaskId = null; routineMenuId = null; dlCarrier = undefined; launchRoutineId = null; pickerStep = null;
   if (wasOpen && sheetReturnFocus && document.contains(sheetReturnFocus) && sheetReturnFocus.offsetParent !== null) sheetReturnFocus.focus({ preventScroll: true });
   sheetReturnFocus = null;
 }
@@ -1097,7 +1098,7 @@ const EMOJI_GROUPS = [[0, "😀", "Smileys"], [1, "🧑", "Personnes"], [3, "�
   [5, "✈️", "Voyages et lieux"], [6, "⚽", "Activités"], [7, "💡", "Objets"], [8, "❤️", "Symboles"], [9, "🏁", "Drapeaux"]];
 let emojiData = null, emojiLoading = null, emojiGroup = 7;
 function loadEmojiData() {
-  if (!emojiLoading) emojiLoading = fetch("vendor/emoji-fr.json").then((r) => r.json()).then((d) => (emojiData = d))
+  if (!emojiLoading) emojiLoading = fetch("vendor/emoji-fr.json").then((r) => r.json()).then((d) => { emojiData = d; C.registerEmojiData(d); window.__sablierEmojiReady = true; return d; })
     .catch(() => (emojiData = EMOJI_CHOICES.map((e) => [e, "", "", 7])));
   return emojiLoading;
 }
@@ -1121,7 +1122,30 @@ function renderRecent() {
   $("emojiRecentWrap").hidden = r.length === 0;
   $("emojiRecent").innerHTML = r.map((e) => emojiBtn(e)).join("");
 }
+function openStepEmoji(i) {
+  closeSheets();
+  pickerStep = i;
+  sheetEmoji = draft.items[i].emoji;
+  $("emojiSheetTitle").textContent = `Emoji de « ${draft.items[i].title} »`;
+  $("emojiSheetBody").appendChild($("emojiPicker"));
+  $("emojiSearch").value = "";
+  const f = emojiData && emojiData.find((r) => r[0] === sheetEmoji);
+  if (f) emojiGroup = f[3];
+  openSheet("emojiSheet");
+  showPicker(true);
+  $("emojiSearch").focus();
+}
 function setSheetEmoji(e) {
+  if (pickerStep !== null && draft && draft.items[pickerStep]) {
+    const i = pickerStep;
+    draft.items[i].emoji = e;
+    pushRecent(e);
+    closeSheets();
+    renderEditorItems();
+    const btn = document.querySelector(`#reItems .re-item[data-i="${i}"] .re-emoji`);
+    if (btn) btn.focus();
+    return;
+  }
   sheetEmoji = e;
   $("tsEmojiPreview").textContent = e;
   document.querySelectorAll("#taskSheet .emoji-opt").forEach((b) => b.classList.toggle("sel", b.dataset.emoji === e));
@@ -1147,6 +1171,7 @@ function openTaskSheet(id, { emoji = false } = {}) {
   const idx = l.tasks.findIndex((t) => t.id === id);
   const t = l.tasks[idx];
   closeSheets();
+  document.querySelector("#taskSheet .ts-edit").after($("emojiPicker"));
   sheetTaskId = id;
   $("tsTitle").value = t.title;
   $("tsMinutes").value = Math.round(t.minutes);
@@ -1166,14 +1191,16 @@ function openTaskSheet(id, { emoji = false } = {}) {
   $("tsMove").innerHTML = others.length ? `<span>Déplacer vers</span>` + others.map((x) => `<button data-ts="move" data-list="${esc(x.id)}">${esc(x.name)}</button>`).join("") : "";
   openSheet("taskSheet");
 }
-$("tsEmojiAuto").addEventListener("click", () => setSheetEmoji(C.suggestEmoji($("tsTitle").value)));
+$("tsEmojiAuto").addEventListener("click", () => setSheetEmoji(C.suggestEmoji(pickerStep !== null && draft ? draft.items[pickerStep].title : $("tsTitle").value)));
+$("emojiSheetClose").addEventListener("click", closeSheets);
 $("nowEmoji").addEventListener("click", () => { const h = cur().tasks[0]; if (h) openTaskSheet(h.id, { emoji: true }); });
 $("tsClose").addEventListener("click", closeSheets);
 function saveTaskSheet() {
   const id = sheetTaskId;
   if (!id) return;
   const l = listOf(id), t = l && l.tasks.find((x) => x.id === id);
-  const patch = { title: $("tsTitle").value, emoji: sheetEmoji };
+  const patch = { title: $("tsTitle").value };
+  if (t && sheetEmoji !== t.emoji) patch.emoji = sheetEmoji;
   if (t && sheetEmoji !== t.emoji) pushRecent(sheetEmoji);
   if (!t || String(Math.round(t.minutes)) !== $("tsMinutes").value) patch.minutes = $("tsMinutes").value;
   const fb = $("tsFinishBy").value;
@@ -1365,7 +1392,7 @@ function renderEditorItems() {
   const n = draft.items.length;
   $("reItems").innerHTML = draft.items.map((it, i) => `<li class="re-item" data-i="${i}">
   <span class="re-num">${i + 1}</span>
-  <input class="re-emoji" data-f="emoji" value="${esc(it.emoji)}" maxlength="12" aria-label="Emoji">
+  <button type="button" class="re-emoji" data-action="emoji" aria-label="Changer l'emoji de l'étape" title="Changer l'emoji">${esc(it.emoji || "🧠")}</button>
   <input class="re-title" data-f="title" value="${esc(it.title)}" aria-label="Titre de l'étape">
   <label class="min-chip"><input class="re-min" data-f="minutes" type="number" inputmode="numeric" min="1" max="600" value="${esc(it.minutes)}" aria-label="Durée"><span>min</span></label>
   <span class="re-tools">
@@ -1379,12 +1406,21 @@ function renderEditorItems() {
 $("reItems").addEventListener("input", (e) => {
   const li = e.target.closest(".re-item"), f = e.target.dataset.f;
   if (!li || !f) return;
-  draft.items[+li.dataset.i][f] = e.target.value;
+  const it = draft.items[+li.dataset.i];
+  if (f === "title") {
+    // l'emoji automatique suit le titre ; un emoji choisi à la main est conservé
+    if (!it.emoji || it.emoji === C.suggestEmoji(it.title)) {
+      it.emoji = C.suggestEmoji(e.target.value);
+      li.querySelector(".re-emoji").textContent = it.emoji;
+    }
+  }
+  it[f] = e.target.value;
   editorTotal();
 });
 $("reItems").addEventListener("click", (e) => {
   const b = e.target.closest("button[data-action]"); if (!b) return;
   const i = +b.closest(".re-item").dataset.i, items = draft.items;
+  if (b.dataset.action === "emoji") { openStepEmoji(i); return; }
   if (b.dataset.action === "remove") items.splice(i, 1);
   if (b.dataset.action === "up" && i > 0) [items[i - 1], items[i]] = [items[i], items[i - 1]];
   if (b.dataset.action === "down" && i < items.length - 1) [items[i + 1], items[i]] = [items[i], items[i + 1]];
@@ -1708,7 +1744,7 @@ document.addEventListener("visibilitychange", () => { if (!document.hidden) tick
 initRemote();
 setupAlarms();
 syncAlarms(state, now());
-setTimeout(loadEmojiData, 1500);
+loadEmojiData();
 // Appli installable (hors de Claude et hors appli Android) : service worker pour le hors-ligne.
 if ("serviceWorker" in navigator && !window.claude && !isNative() && location.protocol.startsWith("http")) {
   navigator.serviceWorker.register("sw.js").catch(() => {});

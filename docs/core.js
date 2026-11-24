@@ -242,7 +242,8 @@ const EMOJI_DICTIONARY = [
   [["voiture", "conduire", "essence", "garage", "recharge"], "🚗"],
   [["train", "transport", "tram", "bus"], "🚆"],
   [["cadeau", "anniversaire", "fete"], "🎁"],
-  [["musique", "piano", "guitare", "instrument", "repetition", "solfege"], "🎹"],
+  [["guitare"], "🎸"],
+  [["musique", "piano", "instrument", "repetition", "solfege"], "🎹"],
   [["appeler", "contacter", "relancer", "rappeler"], "☎️"],
   [["envoyer", "colis", "poste", "livraison"], "📦"],
   [["achat", "acheter", "commander", "commande"], "🛍️"],
@@ -255,13 +256,49 @@ function normalizeText(str) {
   return String(str ?? "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[’]/g, "'");
 }
 const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const PREFIX_STEMS = new Set(["appel", "admin", "copro", "muscu", "retro", "kine", "visio", "doc", "impot", "debug", "devel"]);
 const COMPILED_EMOJI = EMOJI_DICTIONARY.flatMap(([kws, emoji]) =>
   kws.map((kw) => {
     const n = normalizeText(kw);
-    return { len: n.length, emoji, re: new RegExp("(^|[^a-z0-9])" + escapeRe(n)) };
+    // mots courts : mot entier (pluriel admis) — « repas » ne doit pas reconnaître « repasser »
+    const tail = n.length >= 6 || PREFIX_STEMS.has(n) ? "" : "(s|x)?($|[^a-z0-9])";
+    return { len: n.length, emoji, re: new RegExp("(^|[^a-z0-9])" + escapeRe(n) + tail) };
   })
 );
 
+// Base complète d'emojis (noms et mots-clés en français), chargée par l'appli quand elle est disponible.
+let EMOJI_INDEX = null;
+const STOP_WORDS = new Set("les des une un le la de du et en au aux pour par sur avec dans mon ma mes ton ta tes son sa ses notre nos votre vos leur leurs ce cet cette ces qui que quoi faire fait refaire aller passer prendre mettre voir petit petite grand grande gros bien tout tous toute toutes tache taches chose choses truc trucs the and for with".split(" "));
+export function registerEmojiData(data) {
+  EMOJI_INDEX = Array.isArray(data) ? data.filter((r) => Array.isArray(r) && r[3] !== 9).map((r) => ({
+    emoji: r[0], label: normalizeText(r[1]).replace(/[^a-z0-9' ]+/g, " ").trim(),
+    labelWords: normalizeText(r[1]).split(/[^a-z0-9]+/).filter(Boolean),
+    tagWords: normalizeText(r[2]).split(/[^a-z0-9]+/).filter(Boolean),
+  })) : null;
+}
+const singular = (w) => (w.length > 4 && /[sx]$/.test(w) ? w.slice(0, -1) : w);
+// Cherche dans la base complète : nom exact > mot du nom > mot-clé > début de mot (le mot le plus long gagne à égalité).
+function searchIndexFor(norm) {
+  if (!EMOJI_INDEX) return null;
+  const words = [...new Set(norm.split(/[^a-z0-9]+/).filter((w) => w.length >= 3 && !STOP_WORDS.has(w) && !/^\d+$/.test(w)))];
+  let best = null;
+  for (const w0 of words) {
+    const forms = [...new Set([w0, singular(w0)])];
+    for (const row of EMOJI_INDEX) {
+      let sc = 99;
+      for (const w of forms) {
+        const eq = (x) => x === w || singular(x) === w;
+        if (row.label === w) sc = Math.min(sc, 0);
+        else if (row.labelWords.some(eq)) sc = Math.min(sc, 1 + row.labelWords.length * 0.01);
+        else if (row.tagWords.some(eq)) sc = Math.min(sc, 2);
+        else if (w.length >= 5 && row.labelWords.some((x) => x.startsWith(w))) sc = Math.min(sc, 3);
+        else if (w.length >= 5 && row.tagWords.some((x) => x.startsWith(w))) sc = Math.min(sc, 4);
+      }
+      if (sc < 99 && (!best || sc < best.sc || (sc === best.sc && w0.length > best.len))) best = { sc, len: w0.length, emoji: row.emoji };
+    }
+  }
+  return best ? best.emoji : null;
+}
 export function suggestEmoji(title) {
   const norm = normalizeText(title);
   if (!norm.trim()) return DEFAULT_EMOJI;
@@ -269,7 +306,8 @@ export function suggestEmoji(title) {
   for (const k of COMPILED_EMOJI) {
     if (k.re.test(norm) && (!best || k.len > best.len)) best = k;
   }
-  return best ? best.emoji : DEFAULT_EMOJI;
+  if (best) return best.emoji;
+  return searchIndexFor(norm) || DEFAULT_EMOJI;
 }
 
 
@@ -340,7 +378,12 @@ export function updateTask(state, taskId, patch = {}) {
   if (!locate(state, taskId)) return state;
   const s = clone(state);
   const { task: t } = locate(s, taskId);
-  if ("title" in patch) { const v = String(patch.title ?? "").trim(); if (v) t.title = v; }
+  if ("title" in patch) {
+    const v = String(patch.title ?? "").trim();
+    // l'emoji automatique suit le titre ; un emoji choisi à la main est conservé
+    if (v && v !== t.title && !("emoji" in patch) && t.emoji === suggestEmoji(t.title)) t.emoji = suggestEmoji(v);
+    if (v) t.title = v;
+  }
   if ("minutes" in patch) { const m = toMinutes(patch.minutes); if (m !== null) t.minutes = m; }
   if ("emoji" in patch) t.emoji = String(patch.emoji ?? "").trim() || suggestEmoji(t.title);
   return s;

@@ -1699,6 +1699,58 @@ spec("I2", "page des raccourcis et gestes (touche ? ou Réglages)", async () => 
   return p;
 });
 
+// ================================================================ v15
+async function emojiReady(p) {
+  for (let i = 0; i < 60; i++) {
+    if (await p.evaluate(() => window.__sablierEmojiReady === true)) return;
+    await p.clock.runFor(100);
+    await new Promise((r) => setTimeout(r, 30));
+  }
+  throw new Error("base d'emojis non chargée");
+}
+spec("A4", "emoji trouvé dans la base complète à l'ajout, et qui suit le titre", async () => {
+  const p = await open();
+  await emojiReady(p);
+  await add(p, "Girafe 10m"); await add(p, "Brosser les dents 5m");
+  eq(await text(p, "#nowEmoji"), "🦒");
+  eq((await card(p, 0).locator(".task-emoji").textContent()).trim(), "🦷");
+  await card(p, 0).locator(".task-title").fill("Repasser les chemises");
+  await card(p, 0).locator(".task-title").press("Enter");
+  eq((await card(p, 0).locator(".task-emoji").textContent()).trim(), "👔");
+  return p;
+});
+spec("F2", "routine : toucher l'emoji d'une étape ouvre le sélecteur ; l'emoji automatique suit le titre", async () => {
+  const p = await open();
+  await emojiReady(p);
+  await p.click("[data-tab=routines]");
+  await p.click("#newRoutineBtn");
+  await p.fill("#reName", "Soir");
+  await p.fill("#reAdd", "Café 10m"); await p.press("#reAdd", "Enter");
+  const em = p.locator("#reItems .re-emoji").first();
+  eq((await em.textContent()).trim(), "☕");
+  await p.locator("#reItems .re-title").first().fill("Girafe");
+  eq((await em.textContent()).trim(), "🦒", "l'emoji automatique suit le titre");
+  await em.click();
+  await p.waitForSelector("#emojiSheet:not([hidden])");
+  assert(await p.locator("#emojiSheet #emojiGrid .emoji-opt").count() > 10, "grille d'emojis");
+  await p.fill("#emojiSearch", "licorne");
+  await p.press("#emojiSearch", "Enter");
+  assert(await p.locator("#emojiSheet").isHidden(), "fermé après le choix");
+  eq((await em.textContent()).trim(), "🦄");
+  await p.locator("#reItems .re-title").first().fill("Café");
+  eq((await em.textContent()).trim(), "🦄", "un emoji choisi à la main reste");
+  await em.click();
+  await p.click("#tsEmojiAuto");
+  eq((await em.textContent()).trim(), "☕", "✨ Auto");
+  await p.click("#reSave");
+  await p.click(".routine-row [data-action=launch]"); await p.click("#launchGo");
+  eq(await text(p, "#nowEmoji"), "☕");
+  // le sélecteur fonctionne toujours pour les tâches
+  await p.click("#nowEmoji");
+  assert(await p.locator("#taskSheet #emojiPicker").isVisible(), "sélecteur dans la fiche tâche");
+  return p;
+});
+
 // ---------------------------------------------------------------- exécution
 const only = process.argv[2];
 const known = new Set(SPECS.map((s) => s.id));

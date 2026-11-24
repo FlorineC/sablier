@@ -1,5 +1,5 @@
 {
- "ranAt": "2026-11-19T07:55:39.292Z",
+ "ranAt": "2026-11-24T09:40:45.270Z",
  "results": [
   {
    "specId": "L1",
@@ -464,6 +464,16 @@
   {
    "specId": "I2",
    "name": "page des raccourcis et gestes (touche ? ou Réglages)",
+   "ok": true
+  },
+  {
+   "specId": "A4",
+   "name": "emoji trouvé dans la base complète à l'ajout, et qui suit le titre",
+   "ok": true
+  },
+  {
+   "specId": "F2",
+   "name": "routine : toucher l'emoji d'une étape ouvre le sélecteur ; l'emoji automatique suit le titre",
    "ok": true
   }
  ]

@@ -1044,3 +1044,32 @@ spec("F7", "au lancement : choisir une autre heure de fin, ou aucune", () => {
   const c = C.launchRoutine(s, s.routines[0].id, NOW, { start: false, finishByMs: null });
   expect(list(c).active).toBe(null);
 });
+
+// ================================================================ v15 — emoji automatique
+spec("A4", "mots entiers pour les mots-clés courts ; guitare → 🎸", () => {
+  expect(C.suggestEmoji("Repas du soir")).toBe("🍳");
+  expect(C.suggestEmoji("Repasser les chemises")).not.toBe("🍳");
+  expect(C.suggestEmoji("Guitare")).toBe("🎸");
+  expect(C.suggestEmoji("Appeler maman")).toBe("☎️");
+});
+spec("A4", "base complète : noms et mots-clés français", async () => {
+  const fs = await import("node:fs").catch(() => null);
+  const data = fs ? JSON.parse(fs.readFileSync(new URL("../vendor/emoji-fr.json", import.meta.url), "utf8"))
+    : await (await fetch("vendor/emoji-fr.json")).json();
+  C.registerEmojiData(data);
+  try {
+    expect(C.suggestEmoji("Girafe")).toBe("🦒");
+    expect(C.suggestEmoji("Repasser les chemises")).toBe("👔");
+    expect(C.suggestEmoji("Brosser les dents")).toBe("🦷");
+    expect(C.suggestEmoji("Tondre xyzzy")).toBe("🧠");
+  } finally { C.registerEmojiData(null); }
+});
+spec("A4", "renommer : l'emoji automatique suit, un emoji choisi reste", () => {
+  let s = withTasks({ title: "Emails" });
+  expect(tasks(s)[0].emoji).toBe("📧");
+  s = C.updateTask(s, tid(s, 0), { title: "Courses" });
+  expect(tasks(s)[0].emoji).toBe("🛒");
+  s = C.updateTask(s, tid(s, 0), { emoji: "🦄" });
+  s = C.updateTask(s, tid(s, 0), { title: "Emails" });
+  expect(tasks(s)[0].emoji).toBe("🦄");
+});
