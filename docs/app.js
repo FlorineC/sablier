@@ -36,6 +36,7 @@ const ICONS = {
   sound: ["M4 9v6h4l5 4V5L8 9zM16.5 8.5a5 5 0 0 1 0 7"],
   edit: ["M4 20h4L19 9l-4-4L4 16z"],
   reset: ["M3.5 12a8.5 8.5 0 1 0 2.6-6.1M3.5 4v4.5H8"],
+  flag: ["M5 21V4M5 4h12l-2.5 4L17 12H5"],
 };
 function icon(name) {
   const [d, fill, sw] = ICONS[name] || ICONS.more;
@@ -74,7 +75,7 @@ const setText = (el, txt) => { if (el.textContent !== txt) el.textContent = txt;
 const setIcon = (el, name) => { if (el.dataset.ic !== name) { el.dataset.ic = name; el.innerHTML = icon(name); } };
 const setButton = (el, name, label) => {
   const key = name + "|" + label;
-  if (el.dataset.key !== key) { el.dataset.key = key; el.innerHTML = icon(name) + `<span>${esc(label)}</span>`; }
+  if (el.dataset.key !== key) { el.dataset.key = key; el.innerHTML = icon(name) + `<span>${esc(label)}</span>`; el.setAttribute("aria-label", label); }
 };
 
 // ------------------------------------------------------------ identité client
@@ -98,6 +99,8 @@ let listSheetMode = "create";
 let routineMenuId = null;
 let draft = null; // routine en cours d'édition
 let drag = null;
+let dlCarrier; // jalon en cours d'édition : id de la tâche, null = fin de liste, "new" = nouveau
+let launchRoutineId = null, launchMode = "now";
 window.__sablierChimes = 0;
 
 const cur = () => C.currentList(state);
@@ -327,11 +330,10 @@ function render() {
   $("listBarWrap").hidden = view !== "list";
   $("tabbar").hidden = view === "focus" || view === "routine-edit";
   const tabView = view === "routine-edit" ? "routines" : view;
-  document.querySelectorAll("#tabbar button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === tabView)));
+  document.querySelectorAll("#tabbar button").forEach((b) => { if (b.dataset.tab === tabView) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current"); });
   renderListBar();
   renderQueue();
   renderListDone();
-  renderOthers();
   renderLater();
   renderDone();
   renderRoutines();
@@ -368,7 +370,7 @@ function queueCard(t, i, n, minIdx) {
       <div class="task-main">
         <input class="task-title" data-field="title" value="${esc(t.title)}" aria-label="Titre">
         <div class="task-meta">
-          <label class="dur"><input class="task-minutes" data-field="minutes" type="number" inputmode="numeric" min="1" max="600" value="${Math.round(t.minutes)}" aria-label="Durée en minutes"><span>min</span></label>
+          <label class="dur"><input class="task-minutes" data-field="minutes" type="number" inputmode="numeric" min="1" max="600" value="${Math.round(t.minutes)}" aria-label="Durée prévue en minutes"><span>min</span></label>
           <span class="task-timer"></span>
           <button class="mini-reset" data-action="reset" title="Remettre le temps à zéro" aria-label="Remettre le temps à zéro" hidden>${icon("reset")}</button>
         </div>
@@ -382,17 +384,41 @@ function queueCard(t, i, n, minIdx) {
 </li>`;
 }
 
+// Jalon « Fin voulue » : placé juste après la tâche qui porte l'heure (ou en fin de liste).
+function milestoneItem(l, carrierId, ms) {
+  const i = carrierId ? l.tasks.findIndex((t) => t.id === carrierId) : l.tasks.length - 1;
+  const hasMs = (j) => j >= 0 && j < l.tasks.length && Number.isFinite(l.tasks[j].finishByMs);
+  const upOk = carrierId ? i > 0 && !hasMs(i - 1) : l.tasks.length > 0 && !hasMs(l.tasks.length - 1);
+  const downOk = !!carrierId && i < l.tasks.length - 1 && !hasMs(i + 1);
+  return `<li class="milestone" data-task="${esc(carrierId || "")}">
+  <button type="button" class="ms-main" title="Toucher pour changer l'heure, glisser pour déplacer">
+    ${icon("flag")}<span class="ms-time">Fin voulue <b>${C.fmtClock(ms)}</b></span><span class="ms-info"></span>
+  </button>
+  <span class="ms-move">
+    <button type="button" data-ms="up" aria-label="Monter le jalon"${upOk ? "" : " disabled"}>${icon("up")}</button>
+    <button type="button" data-ms="down" aria-label="Descendre le jalon"${downOk ? "" : " disabled"}>${icon("down")}</button>
+  </span>
+</li>`;
+}
 function renderQueue() {
   const el = $("taskList");
   const ae = document.activeElement;
   if (drag || (ae && ae.tagName === "INPUT" && el.contains(ae))) { renderPending = true; return; }
   renderPending = false;
-  const tasks = cur().tasks;
-  const queue = tasks.slice(1);
-  const minIdx = cur().active ? 1 : 0;
-  el.innerHTML = queue.map((t, i) => queueCard(t, i, tasks.length, minIdx)).join("");
-  $("queueTitle").hidden = queue.length === 0;
+  const l = cur();
+  const tasks = l.tasks;
+  const minIdx = l.active ? 1 : 0;
+  const parts = [];
+  if (tasks[0] && Number.isFinite(tasks[0].finishByMs)) parts.push(milestoneItem(l, tasks[0].id, tasks[0].finishByMs));
+  tasks.slice(1).forEach((t, i) => {
+    parts.push(queueCard(t, i, tasks.length, minIdx));
+    if (Number.isFinite(t.finishByMs)) parts.push(milestoneItem(l, t.id, t.finishByMs));
+  });
+  if (Number.isFinite(l.finishByMs) && tasks.length) parts.push(milestoneItem(l, null, l.finishByMs));
+  el.innerHTML = parts.join("");
+  $("queueTitle").hidden = parts.length === 0;
   $("listEmpty").hidden = tasks.length > 0;
+  $("addDeadline").hidden = tasks.length === 0;
 }
 
 function renderListDone() {
@@ -414,16 +440,6 @@ function updateArrows() {
   const overflow = bar.scrollWidth > bar.clientWidth + 2;
   $("listPrev").hidden = !overflow || bar.scrollLeft <= 2;
   $("listNext").hidden = !overflow || bar.scrollLeft + bar.clientWidth >= bar.scrollWidth - 2;
-}
-
-function renderOthers() {
-  const lists = view === "focus" || view === "routine-edit" ? [] : C.activeLists(state).filter((l) => view !== "list" || l.id !== cur().id);
-  $("others").hidden = lists.length === 0;
-  $("others").innerHTML = lists.map((l) => `<div class="other-row" data-list="${esc(l.id)}">
-  <button class="other-main" aria-label="Ouvrir la liste ${esc(l.name)}"><span class="dot"></span><span class="other-name">${esc(l.name)}</span><span class="other-title"></span><span class="other-timer"></span></button>
-  <button class="icon-btn" data-action="toggle" aria-label="Lecture / pause"></button>
-  <button class="icon-btn" data-action="done" aria-label="Terminer">${icon("check")}</button>
-</div>`).join("");
 }
 
 function row({ id, cls, emoji, title, sub, actionsHtml }) {
@@ -458,7 +474,7 @@ function renderDone() {
 function renderRoutines() {
   $("routineList").innerHTML = state.routines.map((r) => row({
     id: r.id, cls: "routine-row", emoji: "🔁", title: r.name,
-    sub: `${plural(r.items.length, "étape")} · ${C.fmtDuration(r.items.reduce((a, it) => a + it.minutes, 0))}`,
+    sub: `${plural(r.items.length, "étape")} · ${C.fmtDuration(r.items.reduce((a, it) => a + it.minutes, 0))}${(() => { const w = C.routineWindow(r); return w ? ` · ${w.start} → ${w.end}` : ""; })()}`,
     actionsHtml: `<button class="pill-btn" data-action="launch">▶ Lancer</button>` + textBtn("edit", "Modifier") + `<button class="icon-btn" data-action="more" aria-label="Plus d'actions">${icon("more")}</button>`,
   })).join("");
   $("routineEmpty").hidden = state.routines.length > 0;
@@ -508,23 +524,35 @@ function tick(fromRender) {
     }
   }
   const list = cur();
+  const pl = C.plan(state, list.id, t);
+  const slotOf = (id) => pl.tasks.find((x) => x.taskId === id);
 
-  // récapitulatif
+  // récapitulatif (temps ajusté par les heures limites)
   const tot = C.totals(state, list.id, t);
-  setText($("listRemaining"), C.fmtDuration(Math.round(tot.remainingSec / 60)));
-  setText($("listFinish"), tot.finishAtMs ? C.fmtClock(tot.finishAtMs) : "—:—");
+  const remAdj = pl.tasks.reduce((a, x) => a + Math.max(0, x.adjustedSec), 0);
+  setText($("listRemaining"), C.fmtDuration(Math.round(remAdj / 60)));
+  const last = pl.tasks[pl.tasks.length - 1];
+  setText($("listFinish"), last ? C.fmtClock(last.endAtMs) : "—:—");
+  const lastSeg = pl.segments[pl.segments.length - 1];
+  $("listWanted").hidden = !lastSeg;
+  if (lastSeg) {
+    setText($("listWanted"), `voulue ${C.fmtClock(lastSeg.deadlineAtMs)}`);
+    $("listWanted").classList.toggle("late", pl.segments.some((g) => g.late));
+  }
   setText($("listCount"), String(tot.count));
   setText($("listCountLbl"), tot.count > 1 ? "tâches" : "tâche");
   $("listProgress").querySelector(".bar").style.width = (tot.progress * 100).toFixed(1) + "%";
+  $("listProgress").setAttribute("aria-valuenow", String(Math.round(tot.progress * 100)));
 
   // carte « Maintenant »
-  const sch = C.schedule(state, list.id, t);
   const head = list.tasks[0];
   $("nowCard").hidden = !head;
   if (head) {
     const isAct = !!(list.active && list.active.taskId === head.id);
     const running = isAct && C.isRunning(state, list.id);
-    const rem = C.remainingSec(state, head.id, t);
+    const slot = slotOf(head.id);
+    const rem = slot ? C.shownSec(slot.adjustedSec) : C.remainingSec(state, head.id, t);
+    const budget = slot ? slot.budgetSec : head.minutes * 60;
     const el = C.elapsedSec(state, head.id, t);
     const card = $("nowCard");
     card.dataset.taskId = head.id;
@@ -534,10 +562,10 @@ function tick(fromRender) {
     setText($("nowLabel"), !isAct ? "Prochaine" : rem <= 0 ? "Temps écoulé" : running ? "En cours" : "En pause");
     setText($("nowEmoji"), head.emoji);
     setText($("nowTitle"), head.title);
-    setText($("nowPlanned"), `prévu ${C.fmtDuration(head.minutes)}`);
+    const squeezed = slot && slot.factor < 0.9995;
+    setText($("nowPlanned"), squeezed ? `prévu ${C.fmtDuration(head.minutes)} · ajusté ${C.fmtDuration(Math.max(0, Math.round(budget / 60)))}` : `prévu ${C.fmtDuration(head.minutes)}`);
     setText($("nowInfo"), el > 0 ? `${fmtSpent(el)} passées` : "");
     $("nowReset").hidden = el <= 0;
-    const slot = sch.find((x) => x.taskId === head.id);
     setText($("nowEta"), slot ? `fin ≈ ${C.fmtClock(slot.endAtMs)}` : "");
     const style = state.settings.clockStyle;
     const mc = $("nowClock");
@@ -546,27 +574,50 @@ function tick(fromRender) {
     mc.style.display = style === "digital" ? "none" : "";
     $("nowProgress").hidden = style !== "digital";
     if (style === "ring") {
-      const frac = rem > 0 ? rem / Math.round(head.minutes * 60) : 0;
+      const frac = rem > 0 && budget > 0 ? Math.min(1, rem / budget) : 0;
       const RC = 2 * Math.PI * 108;
       $("miniRing").style.strokeDasharray = RC.toFixed(2);
       $("miniRing").style.strokeDashoffset = (RC * (1 - frac)).toFixed(2);
     } else if (style === "pie") setDial($("miniPie"), rem);
     const txt = C.fmtTimer(rem);
     setText($("nowTimer"), txt);
+    $("nowTimer").setAttribute("aria-label", `Temps restant ${txt} — modifier`);
     $("nowTimer").classList.toggle("long", txt.length > 5);
-    $("nowProgress").querySelector(".bar").style.width = (Math.min(1, el / (head.minutes * 60)) * 100).toFixed(1) + "%";
+    $("nowProgress").querySelector(".bar").style.width = (budget > 0 ? Math.min(1, Math.max(0, 1 - rem / budget)) * 100 : 100).toFixed(1) + "%";
     setButton($("nowToggle"), running ? "pause" : "play", running ? "Pause" : isAct ? "Reprendre" : "Démarrer");
   }
 
-  // file « À suivre » : temps restant des tâches entamées
+  // file « À suivre » : temps restant des tâches entamées, créneau et durée ajustée
   document.querySelectorAll("#taskList .task-card").forEach((li) => {
     const task = list.tasks.find((x) => x.id === li.dataset.id);
     if (!task) return;
-    setText(li.querySelector(".task-timer"), task.spentSec > 0 ? C.fmtTimer(C.remainingSec(state, task.id, t)) : "");
+    const slot = slotOf(task.id);
+    setText(li.querySelector(".task-timer"), task.spentSec > 0 ? C.fmtTimer(slot ? C.shownSec(slot.adjustedSec) : C.remainingSec(state, task.id, t)) : "");
     const rb = li.querySelector(".mini-reset");
     if (rb && rb.hidden !== !(task.spentSec > 0)) rb.hidden = !(task.spentSec > 0);
-    const slot = sch.find((x) => x.taskId === task.id);
     setText(li.querySelector(".task-eta"), slot ? `${C.fmtClock(slot.startAtMs)} → ${C.fmtClock(slot.endAtMs)}` : "");
+    const squeezed = !!slot && slot.factor < 0.9995;
+    li.classList.toggle("compressed", squeezed);
+    let adj = li.querySelector(".adj");
+    if (squeezed && !adj) {
+      adj = document.createElement("span");
+      adj.className = "adj";
+      li.querySelector(".dur").after(adj);
+    } else if (!squeezed && adj) { adj.remove(); adj = null; }
+    if (adj) setText(adj, C.fmtDuration(Math.max(0, Math.round(slot.budgetSec / 60))));
+  });
+  // jalons : prévu, disponible, écart
+  document.querySelectorAll("#taskList .milestone").forEach((li) => {
+    const carrier = li.dataset.task;
+    const endIdx = carrier ? list.tasks.findIndex((x) => x.id === carrier) : list.tasks.length - 1;
+    const seg = pl.segments.find((g) => g.endIndex === endIdx);
+    if (!seg) return;
+    li.classList.toggle("late", seg.late);
+    li.classList.toggle("squeezed", seg.factor < 0.9995);
+    const info = seg.late ? "heure dépassée"
+      : seg.factor < 0.9995 ? `${C.fmtDuration(Math.round(seg.plannedSec / 60))} prévues · ${C.fmtDuration(Math.round(seg.availableSec / 60))} dispo · −${Math.round((1 - seg.factor) * 100)} %`
+      : `dans les temps · marge ${C.fmtDuration(Math.max(0, Math.round((seg.availableSec - seg.plannedSec) / 60)))}`;
+    setText(li.querySelector(".ms-info"), info);
   });
 
   // pastilles
@@ -574,25 +625,11 @@ function tick(fromRender) {
     const l = C.getList(state, chip.dataset.list);
     const a = l && C.activeTask(state, l.id);
     const running = !!a && C.isRunning(state, l.id);
-    const rem = a ? C.remainingSec(state, a.id, t) : 0;
+    const rem = a ? C.effectiveRemainingSec(state, a.id, t) : 0;
     chip.classList.toggle("running", running);
     chip.classList.toggle("paused", !!a && !running);
     chip.classList.toggle("overtime", !!a && rem < 0);
     setText(chip.querySelector(".chip-time"), a ? C.fmtTimer(rem) : "");
-  });
-
-  // autres listes actives
-  document.querySelectorAll("#others .other-row").forEach((rowEl) => {
-    const l = C.getList(state, rowEl.dataset.list);
-    const a = l && C.activeTask(state, l.id);
-    if (!a) return;
-    const running = C.isRunning(state, l.id);
-    const rem = C.remainingSec(state, a.id, t);
-    rowEl.classList.toggle("running", running);
-    rowEl.classList.toggle("overtime", rem < 0);
-    setText(rowEl.querySelector(".other-title"), `${a.emoji} ${a.title}`);
-    setText(rowEl.querySelector(".other-timer"), C.fmtTimer(rem));
-    setIcon(rowEl.querySelector('[data-action="toggle"]'), running ? "pause" : "play");
   });
 
   if (view === "focus") renderFocus(list, t);
@@ -603,13 +640,16 @@ function renderFocus(list, t) {
   const act = C.activeTask(state, list.id);
   if (!act) return;
   const running = C.isRunning(state, list.id);
-  const rem = C.remainingSec(state, act.id, t);
+  const slot = C.plan(state, list.id, t).tasks.find((x) => x.taskId === act.id);
+  const rem = slot ? C.shownSec(slot.adjustedSec) : C.remainingSec(state, act.id, t);
+  const budget = slot ? slot.budgetSec : act.minutes * 60;
   setText($("focusList"), list.name);
   $("focusReset").hidden = C.elapsedSec(state, act.id, t) <= 0;
   setText($("focusEmoji"), act.emoji);
   setText($("focusTitle"), act.title);
   setText($("focusTimer"), C.fmtTimer(rem));
-  const frac = rem > 0 ? rem / Math.round(act.minutes * 60) : 0;
+  $("focusTimer").setAttribute("aria-label", `Temps restant ${C.fmtTimer(rem)} — modifier`);
+  const frac = rem > 0 && budget > 0 ? Math.min(1, rem / budget) : 0;
   const style = state.settings.clockStyle;
   $("focusClock").className = `ring-wrap ${style}`;
   $("focusPie").toggleAttribute("hidden", style !== "pie");
@@ -772,9 +812,34 @@ function showToast(msg, withUndo) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => { $("toast").hidden = true; undoState = null; }, withUndo ? 6000 : 5000);
 }
-const SHEETS = ["taskSheet", "listSheet", "routineMenu", "confirmSheet", "dataSheet"];
-function openSheet(id) { $(id).hidden = false; }
-function closeSheets() { SHEETS.forEach((id) => { $(id).hidden = true; }); confirmAction = null; sheetTaskId = null; routineMenuId = null; }
+const SHEETS = ["taskSheet", "listSheet", "routineMenu", "confirmSheet", "dataSheet", "deadlineSheet", "launchSheet", "shortcutsSheet"];
+let sheetReturnFocus = null;
+// Fenêtres accessibles : le focus entre dans la fenêtre, y reste (Tab boucle), et revient d'où il venait.
+function openSheet(id) {
+  const ae = document.activeElement;
+  if (!anySheetOpen()) sheetReturnFocus = ae && ae !== document.body ? ae : null;
+  $(id).hidden = false;
+  const first = $(id).querySelector("input:not([type=hidden]):not([disabled]), textarea, select, button:not([disabled]):not(.icon-btn)") || $(id).querySelector("button");
+  if (first && !$(id).contains(document.activeElement)) first.focus({ preventScroll: true });
+}
+function closeSheets() {
+  const wasOpen = anySheetOpen();
+  const ae = document.activeElement;
+  if (ae && ae.closest && ae.closest(".scrim")) ae.blur(); // sinon le champ masqué garde le clavier
+  SHEETS.forEach((id) => { $(id).hidden = true; });
+  confirmAction = null; sheetTaskId = null; routineMenuId = null; dlCarrier = undefined; launchRoutineId = null;
+  if (wasOpen && sheetReturnFocus && document.contains(sheetReturnFocus) && sheetReturnFocus.offsetParent !== null) sheetReturnFocus.focus({ preventScroll: true });
+  sheetReturnFocus = null;
+}
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Tab" || !anySheetOpen()) return;
+  const sh = SHEETS.map($).find((x) => !x.hidden);
+  const f = [...sh.querySelectorAll("button, input, select, textarea, [tabindex]")].filter((x) => !x.disabled && x.offsetParent !== null && x.tabIndex >= 0);
+  if (!f.length) return;
+  const i = f.indexOf(document.activeElement);
+  if (e.shiftKey && (i <= 0)) { e.preventDefault(); f[f.length - 1].focus(); }
+  else if (!e.shiftKey && i === f.length - 1) { e.preventDefault(); f[0].focus(); }
+});
 const anySheetOpen = () => SHEETS.some((id) => !$(id).hidden);
 function askConfirm(message, okLabel, action) {
   closeSheets();
@@ -809,9 +874,26 @@ $("nowFocus").addEventListener("click", () => {
   if (!C.activeTask(state, cur().id)) { unlockAudio(); commit(C.startTask(state, cur().id, null, now())); }
   go("focus");
 });
-$("nowMinus5").addEventListener("click", () => commit(C.adjustTime(state, cur().id, -5)));
-$("nowPlus1").addEventListener("click", () => commit(C.adjustTime(state, cur().id, 1)));
-$("nowPlus5").addEventListener("click", () => commit(C.adjustTime(state, cur().id, 5)));
+// Sous une heure limite, on règle le temps AFFICHÉ (ajusté) ; les autres tâches du tronçon s'adaptent.
+function hasDeadline(l) { return Number.isFinite(l.finishByMs) || l.tasks.some((x) => Number.isFinite(x.finishByMs)); }
+function setShown(sec) {
+  const l = cur();
+  const r = C.setShownRemaining(state, l.id, sec, now());
+  commit(r.state);
+  if (r.capped) {
+    const seg = C.plan(state, l.id, now()).segments[0];
+    showToast(`Pas plus avant la fin voulue${seg ? " de " + C.fmtClock(seg.deadlineAtMs) : ""} : les tâches suivantes du tronçon n'ont plus de temps`, false);
+  }
+}
+function adjustShown(deltaMin) {
+  const l = cur();
+  const head = C.activeTask(state, l.id) || l.tasks[0];
+  if (!head) return;
+  if (!hasDeadline(l)) { commit(C.adjustTime(state, l.id, deltaMin)); return; }
+  setShown(Math.max(60, C.effectiveRemainingSec(state, head.id, now()) + deltaMin * 60));
+}
+$("nowMinus5").addEventListener("click", () => adjustShown(-5));
+$("nowPlus5").addEventListener("click", () => adjustShown(5));
 function resetTask(id) {
   if (id) commit(C.resetTime(state, id, now()), { undoable: true, toast: "Temps remis à zéro" });
 }
@@ -861,7 +943,7 @@ function setupTimerEdit(displayId, wrapId, inputId, areaId) {
     const l = cur();
     const head = C.activeTask(state, l.id) || l.tasks[0];
     if (!head) return;
-    initial = C.fmtTimer(Math.max(0, C.remainingSec(state, head.id, now())));
+    initial = C.fmtTimer(Math.max(0, C.effectiveRemainingSec(state, head.id, now())));
     inp.value = initial;
     disp.hidden = true;
     wrap.hidden = false;
@@ -877,7 +959,7 @@ function setupTimerEdit(displayId, wrapId, inputId, areaId) {
     if (!apply || v === initial) return;
     const sec = C.parseClock(v);
     if (sec === null) { showToast("Temps non reconnu — exemples : 20, 19:30", false); return; }
-    commit(C.setRemainingSec(state, cur().id, sec, now()));
+    setShown(sec);
   };
   disp.addEventListener("click", open);
   if (areaId) $(areaId).addEventListener("click", (e) => { if (!e.target.closest(".timer-input-wrap")) open(); });
@@ -904,6 +986,18 @@ $("quickAdd").addEventListener("keydown", (e) => { if (e.key === "Enter" && e.sh
 
 // file « À suivre »
 $("taskList").addEventListener("click", (e) => {
+  const mb = e.target.closest(".milestone button[data-ms]");
+  if (mb) {
+    const l = cur(), carrier = mb.closest(".milestone").dataset.task || null;
+    const i = carrier ? l.tasks.findIndex((x) => x.id === carrier) : l.tasks.length;
+    const to = l.tasks[i + (mb.dataset.ms === "up" ? -1 : 1)];
+    if (to) commit(C.moveFinishBy(state, l.id, carrier, to.id));
+    const again = document.querySelector(`#taskList .milestone[data-task="${to ? to.id : ""}"] [data-ms="${mb.dataset.ms}"]`);
+    if (again && !again.disabled) again.focus(); else { const m = document.querySelector("#taskList .milestone .ms-main"); if (m) m.focus(); }
+    return;
+  }
+  const mm = e.target.closest(".ms-main");
+  if (mm) { if (e.detail === 0) openDeadline(mm.closest(".milestone").dataset.task || null); return; }
   const b = e.target.closest("button[data-action]");
   if (!b) return;
   const id = b.closest(".task-card").dataset.id;
@@ -945,9 +1039,9 @@ $("taskList").addEventListener("focusout", () => { setTimeout(() => { if (render
 
 // glisser-déposer (souris, tactile, stylet)
 $("taskList").addEventListener("pointerdown", (e) => {
-  const h = e.target.closest(".drag-handle");
+  const h = e.target.closest(".drag-handle, .ms-main");
   if (!h) return;
-  const li = h.closest(".task-card");
+  const li = h.closest(".task-card, .milestone");
   drag = { li, pointerId: e.pointerId, y0: e.clientY, moved: false };
   li.classList.add("dragging");
   try { h.setPointerCapture(e.pointerId); } catch { /* ignore */ }
@@ -963,7 +1057,7 @@ window.addEventListener("pointermove", (e) => {
   else if (e.clientY > mr.bottom - 56) $("main").scrollTop += 14;
   const hero = $("nowCard");
   const hr = hero.getBoundingClientRect();
-  drag.promote = !hero.hidden && e.clientY <= hr.bottom + 8;
+  drag.promote = !drag.li.classList.contains("milestone") && !hero.hidden && e.clientY <= hr.bottom + 8;
   hero.classList.toggle("drop-target", drag.promote);
   if (drag.promote) return;
   const list = $("taskList");
@@ -976,11 +1070,20 @@ window.addEventListener("pointermove", (e) => {
 function endDrag(e) {
   if (!drag || (e && e.pointerId !== drag.pointerId)) return;
   const l = cur();
-  const ids = (l.tasks[0] ? [l.tasks[0].id] : []).concat([...$("taskList").children].map((x) => x.dataset.id));
+  const ids = (l.tasks[0] ? [l.tasks[0].id] : []).concat([...$("taskList").querySelectorAll(".task-card")].map((x) => x.dataset.id));
   const { li, promote, moved } = drag;
   li.classList.remove("dragging");
   $("nowCard").classList.remove("drop-target");
   drag = null;
+  if (li.classList.contains("milestone")) {
+    const from = li.dataset.task || null;
+    if (!moved) { openDeadline(from); return; }
+    let prev = li.previousElementSibling;
+    while (prev && !prev.classList.contains("task-card")) prev = prev.previousElementSibling;
+    const to = prev ? prev.dataset.id : l.tasks[0] && l.tasks[0].id;
+    if (!to || !commit(C.moveFinishBy(state, l.id, from, to))) render();
+    return;
+  }
   if (!moved) { openTaskSheet(li.dataset.id, { emoji: true }); return; } // toucher l'emoji = le changer
   const next = promote ? C.promoteTask(state, l.id, li.dataset.id, now()) : C.reorderTasks(state, l.id, ids);
   if (!commit(next)) render();
@@ -1047,6 +1150,7 @@ function openTaskSheet(id, { emoji = false } = {}) {
   sheetTaskId = id;
   $("tsTitle").value = t.title;
   $("tsMinutes").value = Math.round(t.minutes);
+  $("tsFinishBy").value = Number.isFinite(t.finishByMs) ? C.fmtClock(t.finishByMs) : "";
   sheetEmoji = t.emoji;
   $("tsEmojiPreview").textContent = t.emoji;
   $("emojiSearch").value = "";
@@ -1064,7 +1168,6 @@ function openTaskSheet(id, { emoji = false } = {}) {
 }
 $("tsEmojiAuto").addEventListener("click", () => setSheetEmoji(C.suggestEmoji($("tsTitle").value)));
 $("nowEmoji").addEventListener("click", () => { const h = cur().tasks[0]; if (h) openTaskSheet(h.id, { emoji: true }); });
-$("nowEmoji").addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); $("nowEmoji").click(); } });
 $("tsClose").addEventListener("click", closeSheets);
 function saveTaskSheet() {
   const id = sheetTaskId;
@@ -1073,10 +1176,16 @@ function saveTaskSheet() {
   const patch = { title: $("tsTitle").value, emoji: sheetEmoji };
   if (t && sheetEmoji !== t.emoji) pushRecent(sheetEmoji);
   if (!t || String(Math.round(t.minutes)) !== $("tsMinutes").value) patch.minutes = $("tsMinutes").value;
+  const fb = $("tsFinishBy").value;
+  const had = t && Number.isFinite(t.finishByMs) ? C.fmtClock(t.finishByMs) : "";
   closeSheets();
-  commit(C.updateTask(state, id, patch));
+  let next = C.updateTask(state, id, patch);
+  if (t && fb !== had) next = C.setTaskFinishBy(next, id, fb ? toDeadlineMs(fb) : null);
+  commit(next);
 }
 $("tsSave").addEventListener("click", saveTaskSheet);
+$("tsFinishClear").addEventListener("click", () => { $("tsFinishBy").value = ""; $("tsFinishBy").focus(); });
+$("tsFinishBy").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); saveTaskSheet(); } });
 [$("tsTitle"), $("tsMinutes")].forEach((el) => el.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); saveTaskSheet(); } }));
 $("taskSheet").addEventListener("click", (e) => {
   const b = e.target.closest("[data-ts]");
@@ -1166,18 +1275,6 @@ $("listToRoutine").addEventListener("click", () => {
   commit(C.saveListAsRoutine(state, l.id, l.name), { toast: `Routine « ${l.name} » enregistrée` });
 });
 
-// barre des autres listes actives
-$("others").addEventListener("click", (e) => {
-  const rowEl = e.target.closest(".other-row");
-  if (!rowEl) return;
-  const id = rowEl.dataset.list;
-  const b = e.target.closest("button");
-  if (!b) return;
-  if (b.dataset.action === "toggle") toggleList(id);
-  else if (b.dataset.action === "done") completeIn(id);
-  else { commit(C.setCurrentList(state, id)); go("list"); }
-});
-
 // ------------------------------------------------------------ plus tard / terminées
 $("laterList").addEventListener("click", (e) => {
   const b = e.target.closest("button[data-action]"); if (!b) return;
@@ -1195,11 +1292,7 @@ $("clearDone").addEventListener("click", () => askConfirm("Vider l'historique de
 $("routineList").addEventListener("click", (e) => {
   const b = e.target.closest("button[data-action]"); if (!b) return;
   const r = state.routines.find((x) => x.id === b.closest(".row").dataset.id); if (!r) return;
-  if (b.dataset.action === "launch") {
-    unlockAudio();
-    commit(C.launchRoutine(state, r.id, now()), { toast: `Routine « ${r.name} » lancée` });
-    go("list");
-  }
+  if (b.dataset.action === "launch") { unlockAudio(); openLaunch(r); }
   if (b.dataset.action === "edit") openEditor(r);
   if (b.dataset.action === "more") {
     closeSheets();
@@ -1231,11 +1324,12 @@ $("newRoutineBtn").addEventListener("click", () => openEditor(null));
 
 // éditeur
 function openEditor(r) {
-  draft = r ? { id: r.id, name: r.name, items: r.items.map((it) => ({ ...it })) } : { id: null, name: "", items: [] };
+  draft = r ? { id: r.id, name: r.name, items: r.items.map((it) => ({ ...it })), timing: r.timing ? { ...r.timing } : null } : { id: null, name: "", items: [], timing: null };
   $("reHeading").textContent = r ? "Modifier la routine" : "Nouvelle routine";
   $("reName").value = draft.name;
   $("reAdd").value = "";
   $("reError").hidden = true;
+  $("reTime").value = draft.timing ? draft.timing.time : "";
   renderEditorItems();
   go("routine-edit");
   if (!r) $("reName").focus();
@@ -1243,7 +1337,30 @@ function openEditor(r) {
 function editorTotal() {
   const mins = draft.items.reduce((a, it) => a + (parseInt(it.minutes, 10) || 0), 0);
   $("reTotal").textContent = `${plural(draft.items.length, "étape")} · ${C.fmtDuration(mins)}`;
+  renderTiming();
 }
+function renderTiming() {
+  const mode = draft.timing ? draft.timing.mode : ($("reTimeWrap").hidden ? "none" : draft.pendingMode || "none");
+  document.querySelectorAll("[data-timing]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.timing === mode)));
+  $("reTimeWrap").hidden = mode === "none";
+  $("reTimeLbl").textContent = mode === "start" ? "Commencer à" : "Finir à";
+  const w = draft.timing ? C.routineWindow({ items: draft.items.map((it) => ({ minutes: parseInt(it.minutes, 10) || 0 })), timing: draft.timing }) : null;
+  $("reWindow").textContent = !w ? "" : draft.timing.mode === "start" ? `→ fin estimée à ${w.end}` : `→ à commencer au plus tard à ${w.start}`;
+}
+function updateDraftTiming() {
+  const mode = draft.pendingMode;
+  const v = $("reTime").value;
+  draft.timing = mode && mode !== "none" && /^\d{1,2}:\d{2}$/.test(v) ? { mode, time: v } : null;
+  renderTiming();
+}
+document.querySelectorAll("[data-timing]").forEach((b) => b.addEventListener("click", () => {
+  draft.pendingMode = b.dataset.timing;
+  if (b.dataset.timing === "none") { draft.timing = null; $("reTimeWrap").hidden = true; }
+  else $("reTimeWrap").hidden = false;
+  updateDraftTiming();
+  if (b.dataset.timing !== "none") $("reTime").focus();
+}));
+$("reTime").addEventListener("input", updateDraftTiming);
 function renderEditorItems() {
   const n = draft.items.length;
   $("reItems").innerHTML = draft.items.map((it, i) => `<li class="re-item" data-i="${i}">
@@ -1287,7 +1404,7 @@ $("reAddForm").addEventListener("submit", (e) => {
 });
 $("reSave").addEventListener("click", () => {
   draft.name = $("reName").value;
-  const next = draft.id ? C.updateRoutine(state, draft.id, draft) : C.createRoutine(state, draft.name, draft.items);
+  const next = draft.id ? C.updateRoutine(state, draft.id, { name: draft.name, items: draft.items, timing: draft.timing }) : C.createRoutine(state, draft.name, draft.items, draft.timing);
   if (next === state) {
     $("reError").textContent = !draft.name.trim() ? "Donne un nom à la routine." : "Ajoute au moins une étape.";
     $("reError").hidden = false;
@@ -1305,9 +1422,9 @@ $("focusBack").addEventListener("click", () => go("list"));
 $("focusToggle").addEventListener("click", () => toggleList(cur().id));
 $("focusDone").addEventListener("click", () => completeIn(cur().id));
 $("focusSkip").addEventListener("click", () => commit(C.skipTask(state, cur().id, now())));
-$("focusPlus1").addEventListener("click", () => commit(C.adjustTime(state, cur().id, 1)));
-$("focusPlus5").addEventListener("click", () => commit(C.adjustTime(state, cur().id, 5)));
-$("focusMinus5").addEventListener("click", () => commit(C.adjustTime(state, cur().id, -5)));
+$("focusPlus1").addEventListener("click", () => adjustShown(1));
+$("focusPlus5").addEventListener("click", () => adjustShown(5));
+$("focusMinus5").addEventListener("click", () => adjustShown(-5));
 $("celebrate").addEventListener("click", () => { $("celebrate").hidden = true; });
 
 // ------------------------------------------------------------ onglets & réglages
@@ -1330,14 +1447,226 @@ document.addEventListener("keydown", (e) => {
   const tag = e.target && e.target.tagName;
   if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || anySheetOpen() || e.ctrlKey || e.metaKey || e.altKey) return;
   if (view === "routine-edit") return;
-  if (e.key === "n" || e.key === "N") { e.preventDefault(); if (view !== "list") go("list"); $("quickAdd").focus(); }
-  else if (e.key === " ") { e.preventDefault(); toggleList(cur().id); }
+  const l = cur(), head = C.activeTask(state, l.id) || l.tasks[0];
+  const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+  if (e.key === "?") { e.preventDefault(); openShortcuts(); }
+  else if (k === "n") { e.preventDefault(); if (view !== "list") go("list"); $("quickAdd").focus(); }
+  else if (e.key === " ") { if (e.target.closest && e.target.closest("button")) return; e.preventDefault(); toggleList(l.id); }
+  else if (k === "t") { if (head) completeIn(l.id, head.id); }
+  else if (k === "s") commit(C.skipTask(state, l.id, now()));
+  else if (k === "l") { if (head) sendLater(head.id); }
+  else if (k === "e") { if (head) openTaskSheet(head.id); }
+  else if (e.key === "+" || e.key === "=") adjustShown(5);
+  else if (e.key === "-" || e.key === "−") adjustShown(-5);
+  else if (k === "h") { if (view !== "list") go("list"); openDeadline("new"); }
+  else if (k === "f") {
+    if (view === "focus") go("list");
+    else if (head) { if (!C.activeTask(state, l.id)) { unlockAudio(); commit(C.startTask(state, l.id, null, now())); } go("focus"); }
+  }
+  else if (/^[1-5]$/.test(e.key)) go(["list", "later", "done", "routines", "settings"][+e.key - 1]);
   else if (e.key === "[" || e.key === "]") {
     const i = state.lists.findIndex((l) => l.id === cur().id);
     const j = Math.max(0, Math.min(state.lists.length - 1, i + (e.key === "]" ? 1 : -1)));
     commit(C.setCurrentList(state, state.lists[j].id));
   }
 });
+
+
+// ------------------------------------------------------------ heures de fin voulues (jalons)
+// Heure du jour → horodatage ; une heure déjà passée aujourd'hui vise demain.
+function toDeadlineMs(hhmm) {
+  const t = now();
+  let ms = C.timeOfDayToMs(t, hhmm);
+  if (ms === null) return null;
+  if (ms <= t) ms += 24 * 3600 * 1000;
+  return ms;
+}
+const roundUp5 = (ms) => { const step = 5 * 60 * 1000; return Math.ceil(ms / step) * step; };
+function openDeadline(carrier) {
+  const l = cur();
+  if (!l.tasks.length) return;
+  closeSheets();
+  let ms;
+  if (carrier === "new") {
+    const lastT = l.tasks[l.tasks.length - 1];
+    if (Number.isFinite(lastT.finishByMs)) carrier = lastT.id;
+  }
+  if (carrier === "new") {
+    const p = C.plan(state, l.id, now());
+    ms = roundUp5(p.tasks[p.tasks.length - 1].endAtMs);
+  } else {
+    const t = carrier ? l.tasks.find((x) => x.id === carrier) : null;
+    ms = carrier ? t && t.finishByMs : l.finishByMs;
+    if (!Number.isFinite(ms)) return;
+  }
+  dlCarrier = carrier;
+  const after = carrier && carrier !== "new" ? l.tasks.find((x) => x.id === carrier) : l.tasks[l.tasks.length - 1];
+  $("dlNote").textContent = `Les tâches jusqu'à « ${after.title} » sont raccourcies au prorata si le temps prévu dépasse cette heure. Les durées prévues ne changent pas.`;
+  $("dlTime").value = C.fmtClock(ms);
+  $("dlRemove").hidden = carrier === "new";
+  openSheet("deadlineSheet");
+  $("dlTime").focus();
+  previewDeadline();
+}
+function deadlineDraft() {
+  const l = cur();
+  const ms = toDeadlineMs($("dlTime").value);
+  if (ms === null) return null;
+  const carrier = dlCarrier === "new" ? l.tasks[l.tasks.length - 1].id : dlCarrier;
+  return carrier ? C.setTaskFinishBy(state, carrier, ms) : C.setListFinishBy(state, l.id, ms);
+}
+function previewDeadline() {
+  const d = deadlineDraft();
+  if (!d) { $("dlPreview").textContent = "Heure non valide"; return; }
+  const l = cur();
+  const carrier = dlCarrier === "new" ? l.tasks[l.tasks.length - 1].id : dlCarrier;
+  const endIdx = carrier ? l.tasks.findIndex((x) => x.id === carrier) : l.tasks.length - 1;
+  const seg = C.plan(d, l.id, now()).segments.find((g) => g.endIndex === endIdx);
+  $("dlPreview").classList.toggle("warn", !!seg && seg.factor < 0.9995);
+  $("dlPreview").textContent = !seg ? "" : seg.factor < 0.9995
+    ? `${C.fmtDuration(Math.round(seg.plannedSec / 60))} prévues pour ${C.fmtDuration(Math.round(seg.availableSec / 60))} → tâches raccourcies de ${Math.round((1 - seg.factor) * 100)} %`
+    : `Dans les temps · marge ${C.fmtDuration(Math.max(0, Math.round((seg.availableSec - seg.plannedSec) / 60)))}`;
+}
+$("dlTime").addEventListener("input", previewDeadline);
+$("dlTime").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("dlSave").click(); } });
+$("dlSave").addEventListener("click", () => {
+  const d = deadlineDraft();
+  if (!d) { $("dlPreview").textContent = "Heure non valide"; return; }
+  closeSheets();
+  commit(d);
+});
+$("dlRemove").addEventListener("click", () => {
+  const l = cur(), c = dlCarrier;
+  closeSheets();
+  commit(c ? C.setTaskFinishBy(state, c, null) : C.setListFinishBy(state, l.id, null), { undoable: true, toast: "Heure de fin voulue retirée" });
+});
+$("dlClose").addEventListener("click", closeSheets);
+$("addDeadline").addEventListener("click", () => openDeadline("new"));
+
+// ------------------------------------------------------------ vue maximisée : glisser vers la gauche = terminer
+(() => {
+  const el = $("focusCard");
+  let sw = null;
+  const reset = () => { el.style.transform = ""; el.style.opacity = ""; el.classList.remove("swiping"); el.style.setProperty("--reveal", "0"); };
+  el.addEventListener("pointerdown", (e) => {
+    if (e.button > 0 || e.target.closest(".timer-input-wrap")) return;
+    sw = { id: e.pointerId, x0: e.clientX, y0: e.clientY, dx: 0, active: false };
+  });
+  el.addEventListener("pointermove", (e) => {
+    if (!sw || e.pointerId !== sw.id) return;
+    const dx = e.clientX - sw.x0, dy = e.clientY - sw.y0;
+    if (!sw.active) {
+      if (Math.abs(dx) < 10 || Math.abs(dx) < Math.abs(dy)) return;
+      sw.active = true;
+      try { el.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+      el.classList.add("swiping");
+    }
+    sw.dx = Math.min(0, dx);
+    const w = el.getBoundingClientRect().width || 300;
+    el.style.transform = `translateX(${sw.dx}px) rotate(${(sw.dx / w) * 6}deg)`;
+    el.style.setProperty("--reveal", String(Math.min(1, -sw.dx / (w * 0.35))));
+  });
+  const end = (e) => {
+    if (!sw || (e && e.pointerId !== sw.id)) return;
+    const { dx, active } = sw;
+    sw = null;
+    if (!active) return;
+    // le clic qui suit un glisser ne doit pas ouvrir la saisie du temps
+    const swallow = (ev) => { ev.stopPropagation(); ev.preventDefault(); };
+    window.addEventListener("click", swallow, true);
+    setTimeout(() => window.removeEventListener("click", swallow, true), 60);
+    const w = el.getBoundingClientRect().width || 300;
+    if (dx < -Math.max(90, w * 0.3)) {
+      el.classList.add("leaving");
+      el.style.transform = `translateX(${-w * 1.3}px) rotate(-8deg)`;
+      el.style.opacity = "0";
+      setTimeout(() => { el.classList.remove("leaving"); reset(); completeIn(cur().id); }, 220);
+    } else {
+      el.classList.add("back");
+      reset();
+      setTimeout(() => el.classList.remove("back"), 220);
+    }
+  };
+  el.addEventListener("pointerup", end);
+  el.addEventListener("pointercancel", end);
+})();
+
+
+// ------------------------------------------------------------ lancer une routine (maintenant / finir à / commencer à)
+function openLaunch(r) {
+  closeSheets();
+  launchRoutineId = r.id;
+  const total = r.items.reduce((a, it) => a + Math.round(it.minutes), 0);
+  $("launchTitle").textContent = `Lancer « ${r.name} » (${C.fmtDuration(total)})`;
+  launchMode = r.timing ? r.timing.mode : "now";
+  $("launchTime").value = r.timing ? r.timing.time : C.fmtClock(roundUp5(now() + total * 60000));
+  renderLaunch();
+  openSheet("launchSheet");
+}
+function launchPlan() {
+  const r = state.routines.find((x) => x.id === launchRoutineId);
+  if (!r) return null;
+  const t = now(), total = r.items.reduce((a, it) => a + Math.round(it.minutes), 0) * 60;
+  const at = C.timeOfDayToMs(t, $("launchTime").value);
+  return { r, t, total, at };
+}
+function renderLaunch() {
+  document.querySelectorAll("[data-launch]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.launch === launchMode)));
+  $("launchTimeWrap").hidden = launchMode === "now";
+  $("launchTimeLbl").textContent = launchMode === "start" ? "Commencer à" : "Finir à";
+  const lp = launchPlan();
+  if (!lp) return;
+  const { t, total, at } = lp;
+  let msg = "", ok = true, warn = false;
+  if (launchMode === "now") msg = `Démarre maintenant · fin estimée ≈ ${C.fmtClock(t + total * 1000)}`;
+  else if (at === null) { msg = "Choisis une heure"; ok = false; }
+  else if (launchMode === "end") {
+    if (at <= t) { msg = "Cette heure est déjà passée"; ok = false; }
+    else {
+      const avail = Math.round((at - t) / 1000);
+      if (avail >= total) msg = `Démarre maintenant · dans les temps, marge ${C.fmtDuration(Math.round((avail - total) / 60))}`;
+      else { warn = true; msg = `${C.fmtDuration(Math.round(total / 60))} prévues pour ${C.fmtDuration(Math.round(avail / 60))} → tâches raccourcies de ${Math.round((1 - avail / total) * 100)} %`; }
+    }
+  } else msg = at <= t ? `Démarre maintenant · fin estimée ≈ ${C.fmtClock(t + total * 1000)}` : `Liste créée en pause, à lancer à ${C.fmtClock(at)} · fin estimée ${C.fmtClock(at + total * 1000)}`;
+  $("launchInfo").textContent = msg;
+  $("launchInfo").classList.toggle("warn", warn);
+  $("launchGo").disabled = !ok;
+}
+document.querySelectorAll("[data-launch]").forEach((b) => b.addEventListener("click", () => { launchMode = b.dataset.launch; renderLaunch(); if (launchMode !== "now") $("launchTime").focus(); }));
+$("launchTime").addEventListener("input", renderLaunch);
+$("launchClose").addEventListener("click", closeSheets);
+$("launchGo").addEventListener("click", () => {
+  const lp = launchPlan();
+  if (!lp) return;
+  const { r, t, at } = lp;
+  const opts = launchMode === "now" ? { start: true, finishByMs: null }
+    : launchMode === "end" ? { start: true, finishByMs: at }
+    : { start: at === null || at <= t, finishByMs: null };
+  closeSheets();
+  commit(C.launchRoutine(state, r.id, t, opts), { toast: `Routine « ${r.name} » lancée` });
+  go("list");
+});
+
+// ------------------------------------------------------------ raccourcis et gestes
+const SHORTCUTS = [
+  ["Clavier", [
+    ["N", "Nouvelle tâche (champ d'ajout)"], ["Entrée", "Ajouter la tâche en bas de la liste"], ["Maj+Entrée", "Ajouter la tâche en haut de la liste"],
+    ["Espace", "Démarrer / mettre en pause"], ["T", "Terminer la tâche en cours"], ["S", "Passer (envoyer en fin de liste)"],
+    ["L", "Mettre la tâche en cours « Plus tard »"], ["E", "Modifier la tâche en cours"], ["+ / −", "Ajouter / retirer 5 minutes"],
+    ["H", "Heure de fin voulue"], ["F", "Vue maximisée"], ["[ / ]", "Liste précédente / suivante"],
+    ["1 à 5", "Onglets : Liste, Plus tard, Terminées, Routines, Réglages"], ["?", "Cette page"], ["Échap", "Fermer une fenêtre, quitter la vue maximisée, annuler une saisie"],
+  ]],
+  ["Gestes", [
+    ["Toucher l'horloge", "Taper le temps restant (25, 19:30, 1:02:03)"], ["Toucher l'emoji", "Choisir un autre emoji"],
+    ["Glisser l'emoji", "Réordonner ; le déposer sur la carte « Maintenant » en fait la tâche en cours"],
+    ["Glisser un jalon « Fin voulue »", "Le placer entre deux tâches ; le toucher pour changer l'heure"],
+    ["Vue maximisée : glisser vers la gauche", "Terminer la tâche (Annuler dans le bandeau)"],
+  ]],
+];
+$("shortcutsBody").innerHTML = SHORTCUTS.map(([g, rows]) => `<h4>${g}</h4><dl>${rows.map(([k, d]) => `<div><dt>${k.split(" / ").map((x) => g === "Clavier" ? `<kbd>${esc(x)}</kbd>` : esc(x)).join(" / ")}</dt><dd>${esc(d)}</dd></div>`).join("")}</dl>`).join("");
+function openShortcuts() { closeSheets(); openSheet("shortcutsSheet"); $("scClose").focus(); }
+$("openShortcuts").addEventListener("click", openShortcuts);
+$("scClose").addEventListener("click", closeSheets);
 
 // ------------------------------------------------------------ sauvegarde (exporter / importer)
 function openData(mode) {

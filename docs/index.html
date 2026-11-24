@@ -32,28 +32,21 @@
       <div class="list-summary">
         <div class="sum-row" id="listSummary">
           <div class="sum-item main"><span class="sum-val" id="listRemaining"></span> <span class="sum-lbl">restantes</span></div>
-          <div class="sum-item"><span class="sum-lbl">fin</span> <span class="sum-val sm" id="listFinish"></span></div>
+          <div class="sum-item"><span class="sum-lbl">fin</span> <span class="sum-val sm" id="listFinish"></span><span class="sum-wanted" id="listWanted" hidden></span></div>
           <div class="sum-item"><span class="sum-val sm" id="listCount"></span> <span class="sum-lbl" id="listCountLbl"></span></div>
         </div>
         <div class="progress" id="listProgress" role="progressbar" aria-label="Progression de la liste"><div class="bar"></div></div>
       </div>
 
-      <article class="now-card" id="nowCard" hidden>
+      <form class="quick-add" id="quickAddForm" autocomplete="off">
+        <input id="quickAdd" type="text" placeholder="Ajouter une tâche… ex. Emails 15m" aria-label="Nouvelle tâche (durée possible en fin : 15m, 1h30)" enterkeyhint="done">
+        <button type="button" class="add-top" id="quickAddTop" aria-label="Ajouter en haut de la liste" title="Ajouter en haut (Maj+Entrée)" data-icon="top"></button>
+        <button type="submit" class="add-main" aria-label="Ajouter en bas de la liste" title="Ajouter en bas (Entrée)" data-icon="plus"></button>
+      </form>
+
+      <article class="now-card" id="nowCard" aria-labelledby="nowTitle" hidden>
         <span class="edge-label" id="nowEta"></span>
-        <div class="now-head">
-          <span class="now-label" id="nowLabel">Prochaine</span>
-          <div class="now-head-acts">
-            <button class="icon-btn" id="nowLater" aria-label="Plus tard" title="Plus tard" data-icon="later"></button>
-            <button class="icon-btn" id="nowMenu" aria-label="Modifier la tâche" title="Modifier" data-icon="edit"></button>
-          </div>
-        </div>
-        <div class="now-body">
-          <div class="now-emoji" id="nowEmoji" role="button" tabindex="0" title="Changer l'emoji" aria-label="Changer l'emoji"></div>
-          <div class="now-text"><h2 class="now-title" id="nowTitle"></h2>
-            <div class="now-meta" id="nowMeta"><span id="nowPlanned"></span><span id="nowInfo"></span></div>
-          </div>
-        </div>
-        <div class="clock-area">
+        <div class="now-top">
           <div class="clock-box" id="nowClockBox">
             <svg class="clock-svg" id="nowClock" viewBox="0 0 240 240" aria-hidden="true">
               <g class="ring-g">
@@ -68,35 +61,36 @@
               </g>
             </svg>
             <div class="clock-center">
-              <div class="now-timer editable" id="nowTimer" role="button" tabindex="0" title="Toucher pour taper le temps restant" aria-label="Temps restant — toucher pour modifier"></div>
+              <button type="button" class="now-timer editable" id="nowTimer" title="Changer le temps restant" aria-label="Temps restant — modifier"></button>
               <label class="timer-input-wrap" id="nowTimerWrap" hidden><input class="timer-input" id="nowTimerInput" type="text" inputmode="decimal" autocomplete="off" placeholder="mm:ss" aria-label="Temps restant (minutes ou mm:ss)"></label>
             </div>
           </div>
-          <span class="edit-hint" aria-hidden="true">toucher l'horloge pour changer le temps</span>
+          <div class="now-text">
+            <div class="now-head">
+              <span class="now-label" id="nowLabel">Prochaine</span>
+              <div class="now-head-acts">
+                <button class="icon-btn" id="nowReset" aria-label="Remettre le temps à zéro" title="Remettre le temps à zéro" data-icon="reset" hidden></button>
+                <button class="icon-btn" id="nowLater" aria-label="Plus tard" title="Plus tard" data-icon="later"></button>
+                <button class="icon-btn" id="nowMenu" aria-label="Modifier la tâche" title="Modifier" data-icon="edit"></button>
+              </div>
+            </div>
+            <h2 class="now-title"><button type="button" class="now-emoji" id="nowEmoji" title="Changer l'emoji" aria-label="Changer l'emoji"></button><span id="nowTitle"></span></h2>
+            <div class="now-meta" id="nowMeta"><span id="nowPlanned"></span><span id="nowInfo"></span></div>
+          </div>
         </div>
-        <div class="progress" id="nowProgress"><div class="bar"></div></div>
-        <div class="seg" aria-label="Ajuster le temps">
-          <button id="nowMinus5" aria-label="Retirer 5 minutes">−5 min</button>
-          <button id="nowPlus1" aria-label="Ajouter 1 minute">+1 min</button>
-          <button id="nowPlus5" aria-label="Ajouter 5 minutes">+5 min</button>
-        </div>
+        <div class="progress" id="nowProgress" aria-hidden="true"><div class="bar"></div></div>
         <div class="now-actions">
-          <button class="big-btn" id="nowToggle"></button>
-          <button class="round-btn" id="nowReset" aria-label="Remettre le temps à zéro" title="Remettre le temps à zéro" data-icon="reset" hidden></button>
+          <button class="round-btn txt" id="nowMinus5" aria-label="Retirer 5 minutes" title="−5 min">−5</button>
+          <button class="round-btn txt" id="nowPlus5" aria-label="Ajouter 5 minutes" title="+5 min">+5</button>
+          <button class="round-btn main" id="nowToggle"></button>
           <button class="round-btn" id="nowDone" aria-label="Terminer" title="Terminer" data-icon="check"></button>
-          <button class="round-btn" id="nowFocus" aria-label="Mode focus" title="Mode focus" data-icon="focus"></button>
+          <button class="round-btn" id="nowFocus" aria-label="Vue maximisée" title="Vue maximisée (F)" data-icon="focus"></button>
         </div>
       </article>
 
-      <form class="quick-add" id="quickAddForm" autocomplete="off">
-        <input id="quickAdd" type="text" placeholder="Ajouter une tâche… ex. Emails 15m" aria-label="Nouvelle tâche" enterkeyhint="done">
-        <button type="button" class="add-top" id="quickAddTop" aria-label="Ajouter en haut de la liste" title="Ajouter en haut (Maj+Entrée)" data-icon="top"></button>
-        <button type="submit" class="add-main" aria-label="Ajouter en bas de la liste" title="Ajouter en bas (Entrée)" data-icon="plus"></button>
-      </form>
-      <p class="hint">Durée en fin de saisie : 15m, 1h30 · <span class="kbd-only">Maj+Entrée ou </span>⤒ ajoute en haut</p>
-
       <h3 class="queue-title" id="queueTitle" hidden>À suivre</h3>
       <ul class="task-list" id="taskList"></ul>
+      <button class="add-deadline" id="addDeadline" data-icon="flag" hidden><span>Heure de fin voulue</span></button>
       <p class="empty-hint" id="listEmpty" hidden>Liste vide. Ajoute une tâche ci-dessus, ou lance une routine.</p>
       <div class="list-done">
         <button class="done-toggle" id="doneToggle" aria-expanded="false" hidden></button>
@@ -136,6 +130,15 @@
       </div>
       <label class="field"><span>Nom</span><input id="reName" type="text" placeholder="Ex. Routine du matin" autocomplete="off"></label>
       <p class="re-total" id="reTotal"></p>
+      <div class="re-timing">
+        <div class="segmented" role="group" aria-label="Horaire de la routine">
+          <button type="button" data-timing="none" aria-pressed="true">Pas d'horaire</button>
+          <button type="button" data-timing="start" aria-pressed="false">Commencer à</button>
+          <button type="button" data-timing="end" aria-pressed="false">Finir à</button>
+        </div>
+        <label class="field time-field" id="reTimeWrap" hidden><span id="reTimeLbl">Heure</span><input type="time" id="reTime"></label>
+        <p class="re-window" id="reWindow" aria-live="polite"></p>
+      </div>
       <ul id="reItems"></ul>
       <form class="quick-add" id="reAddForm" autocomplete="off">
         <input id="reAdd" type="text" placeholder="Ajouter une étape… ex. Café 10m" aria-label="Nouvelle étape" enterkeyhint="done">
@@ -190,14 +193,17 @@
           <div class="setting-ctrl"><button class="btn ghost" id="exportData">Exporter</button><button class="btn ghost" id="importData">Importer</button></div>
         </div>
       </div>
+      <button class="btn ghost block" id="openShortcuts" style="margin-top:14px">Raccourcis clavier et gestes</button>
       <a class="footer-link" href="tests.html">Spécifications &amp; résultats des tests →</a>
     </section>
 
     <!-- ======================= Focus ======================= -->
     <section id="viewFocus" class="focus-view" hidden>
-      <button class="back-btn" id="focusBack">← Liste</button>
+      <button class="back-btn" id="focusBack" aria-label="Retour à la liste">← Liste</button>
       <div class="focus-list" id="focusList"></div>
-      <div class="focus-head"><span class="focus-emoji" id="focusEmoji"></span><h2 class="focus-title" id="focusTitle"></h2></div>
+      <div class="focus-card" id="focusCard">
+      <div class="swipe-reveal" aria-hidden="true"><span data-icon="check"></span> Terminer</div>
+      <div class="focus-head"><span class="focus-emoji" id="focusEmoji" aria-hidden="true"></span><h2 class="focus-title" id="focusTitle"></h2></div>
       <div class="ring-wrap" id="focusClock">
         <svg class="pie-svg" id="focusPie" viewBox="0 0 240 240" aria-hidden="true" hidden>
           <circle class="dial-face" cx="120" cy="120" r="118"></circle>
@@ -209,10 +215,11 @@
           <circle class="ring-bg" cx="110" cy="110" r="98"></circle>
           <circle class="ring-progress" id="ringProgress" cx="110" cy="110" r="98"></circle>
         </svg>
-        <div class="focus-timer editable" id="focusTimer" role="button" tabindex="0" title="Toucher pour taper le temps restant" aria-label="Temps restant — toucher pour modifier"></div>
+        <button type="button" class="focus-timer editable" id="focusTimer" title="Changer le temps restant" aria-label="Temps restant — modifier"></button>
         <label class="timer-input-wrap focus-input" id="focusTimerWrap" hidden><input class="timer-input" id="focusTimerInput" type="text" inputmode="decimal" autocomplete="off" placeholder="mm:ss" aria-label="Temps restant (minutes ou mm:ss)"></label>
       </div>
-      <p class="focus-state" id="focusState"></p>
+      </div>
+      <p class="focus-state" id="focusState" aria-live="polite"></p>
       <div class="seg wide" aria-label="Ajuster le temps">
         <button id="focusMinus5">−5 min</button>
         <button id="focusPlus1">+1 min</button>
@@ -229,7 +236,6 @@
   </main>
 
   <div class="toast" id="toast" role="status" hidden><span id="toastMsg"></span><button id="toastUndo">Annuler</button></div>
-  <div class="others" id="others" hidden></div>
 
   <nav class="tabbar" id="tabbar">
     <button data-tab="list" data-icon="list"><span>Liste</span></button>
@@ -242,9 +248,9 @@
 
 <!-- ======================= Fenêtres ======================= -->
 <div class="scrim" id="taskSheet" hidden>
-  <div class="sheet" role="dialog" aria-label="Tâche">
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="tsHeading">
     <div class="grabber" aria-hidden="true"></div>
-    <div class="sheet-head"><h3>Modifier la tâche</h3><button class="icon-btn" id="tsClose" aria-label="Fermer" data-icon="x"></button></div>
+    <div class="sheet-head"><h3 id="tsHeading">Modifier la tâche</h3><button class="icon-btn" id="tsClose" aria-label="Fermer" data-icon="x"></button></div>
     <div class="ts-edit">
       <button type="button" class="emoji-preview" id="tsEmojiPreview" aria-label="Changer l'emoji" aria-expanded="false" title="Changer l'emoji"></button>
       <input type="text" id="tsTitle" aria-label="Titre">
@@ -259,6 +265,11 @@
       <div class="emoji-cats" id="emojiCats" role="tablist" aria-label="Catégories d'emoji"></div>
       <div class="emoji-grid" id="emojiGrid" role="listbox" aria-label="Emojis"></div>
     </div>
+    <div class="ts-finish">
+      <label for="tsFinishBy" data-icon="flag"><span>Finir cette tâche avant</span></label>
+      <input type="time" id="tsFinishBy">
+      <button type="button" class="icon-btn" id="tsFinishClear" aria-label="Retirer l'heure de fin voulue" title="Retirer" data-icon="x"></button>
+    </div>
     <button class="btn primary block" id="tsSave">Enregistrer</button>
     <div class="ts-actions">
       <button data-ts="dup" data-icon="dup"><span>Dupliquer</span></button>
@@ -272,7 +283,7 @@
   <div class="sheet" role="dialog" aria-labelledby="listSheetTitle">
     <div class="grabber" aria-hidden="true"></div>
     <div class="sheet-head"><h3 id="listSheetTitle">Nouvelle liste</h3><button class="icon-btn" id="listClose" aria-label="Fermer" data-icon="x"></button></div>
-    <input type="text" id="listName" placeholder="Ex. Boulot, Cuisine, Ménage…" autocomplete="off">
+    <input type="text" id="listName" placeholder="Ex. Boulot, Cuisine, Ménage…" autocomplete="off" aria-labelledby="listSheetTitle">
     <button class="btn primary block" id="listSave">Créer</button>
     <div class="menu-list" id="listExtra">
       <button id="listToRoutine">💾 Enregistrer cette liste comme routine</button>
@@ -323,14 +334,51 @@
     <div class="grabber" aria-hidden="true"></div>
     <h3 id="authTitle">Synchroniser tes appareils</h3>
     <p class="sheet-note">Connecte-toi avec le même compte sur le web et sur ton téléphone pour retrouver partout tes listes, minuteurs et routines.</p>
-    <input type="email" id="authEmail" placeholder="E-mail" autocomplete="email" inputmode="email">
-    <input type="password" id="authPassword" placeholder="Mot de passe (6 caractères min.)" autocomplete="current-password">
+    <input type="email" id="authEmail" placeholder="E-mail" autocomplete="email" inputmode="email" aria-label="E-mail">
+    <input type="password" id="authPassword" placeholder="Mot de passe (6 caractères min.)" autocomplete="current-password" aria-label="Mot de passe">
     <p class="error" id="authError" hidden></p>
     <div class="sheet-actions">
       <button class="btn ghost" id="authCreate">Créer un compte</button>
       <button class="btn primary" id="authLogin">Se connecter</button>
     </div>
     <button class="back-btn" id="authSkip" style="align-self:center">Continuer sans compte</button>
+  </div>
+</div>
+
+<div class="scrim" id="deadlineSheet" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="dlTitle">
+    <div class="grabber" aria-hidden="true"></div>
+    <div class="sheet-head"><h3 id="dlTitle">Heure de fin voulue</h3><button class="icon-btn" id="dlClose" aria-label="Fermer" data-icon="x"></button></div>
+    <p class="sheet-note" id="dlNote"></p>
+    <label class="field time-field"><span>Fini à</span><input type="time" id="dlTime"></label>
+    <p class="dl-preview" id="dlPreview" aria-live="polite"></p>
+    <div class="sheet-actions">
+      <button class="btn ghost" id="dlRemove">Retirer</button>
+      <button class="btn primary" id="dlSave">Enregistrer</button>
+    </div>
+  </div>
+</div>
+
+<div class="scrim" id="launchSheet" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="launchTitle">
+    <div class="grabber" aria-hidden="true"></div>
+    <div class="sheet-head"><h3 id="launchTitle"></h3><button class="icon-btn" id="launchClose" aria-label="Fermer" data-icon="x"></button></div>
+    <div class="segmented" role="group" aria-label="Quand">
+      <button type="button" data-launch="now" aria-pressed="true">Maintenant</button>
+      <button type="button" data-launch="end" aria-pressed="false">Finir à</button>
+      <button type="button" data-launch="start" aria-pressed="false">Commencer à</button>
+    </div>
+    <label class="field time-field" id="launchTimeWrap" hidden><span id="launchTimeLbl">Heure</span><input type="time" id="launchTime"></label>
+    <p class="dl-preview" id="launchInfo" aria-live="polite"></p>
+    <button class="btn primary block" id="launchGo">Lancer</button>
+  </div>
+</div>
+
+<div class="scrim" id="shortcutsSheet" hidden>
+  <div class="sheet tall" role="dialog" aria-modal="true" aria-labelledby="scTitle">
+    <div class="grabber" aria-hidden="true"></div>
+    <div class="sheet-head"><h3 id="scTitle">Raccourcis et gestes</h3><button class="icon-btn" id="scClose" aria-label="Fermer" data-icon="x"></button></div>
+    <div class="shortcuts" id="shortcutsBody"></div>
   </div>
 </div>
 

@@ -147,21 +147,14 @@ spec("L3", "deux listes tournent en même temps", async () => {
   eq((await chip(p, "Ma liste").locator(".chip-time").textContent()).trim(), "09:00");
   return p;
 });
-spec("L4", "piloter les minuteurs des autres listes depuis la barre d'ensemble", async () => {
+spec("L4", "pas de widget des autres listes : les pastilles montrent leurs minuteurs", async () => {
   const p = await open();
-  await add(p, "Emails 10m"); await add(p, "Rapport 10m");
+  await add(p, "Emails 10m");
   await p.click("#nowToggle");
   await newList(p, "Cuisine");
-  const row = p.locator("#others .other-row", { hasText: "Ma liste" });
-  assert(await row.isVisible(), "ligne « Ma liste » visible");
-  assert((await row.textContent()).includes("Emails"), "tâche en cours affichée");
-  await row.locator("[data-action=toggle]").click(); // pause
+  eq(await p.locator("#others, .others, .other-row").count(), 0, "aucun widget");
   await p.clock.runFor(60000);
-  eq((await row.locator(".other-timer").textContent()).trim(), "10:00");
-  await row.locator("[data-action=done]").click();
-  assert((await row.textContent()).includes("Rapport"), "la suivante prend la place");
-  await row.locator(".other-main").click();
-  eq(await chip(p, "Ma liste").getAttribute("aria-pressed"), "true");
+  eq((await chip(p, "Ma liste").locator(".chip-time").textContent()).trim(), "09:00");
   return p;
 });
 spec("L5", "déplacer une tâche vers une autre liste", async () => {
@@ -284,7 +277,7 @@ spec("U1", "carte « Maintenant » : prochaine tâche, puis tâche en cours", as
   assert(await p.locator("#nowCard").isHidden(), "pas de carte sur liste vide");
   await add(p, "Emails 10m"); await add(p, "Rapport");
   eq(await text(p, "#nowLabel"), "Prochaine");
-  assert((await text(p, "#nowToggle")).includes("Démarrer"), "bouton Démarrer");
+  eq(await p.getAttribute("#nowToggle", "aria-label"), "Démarrer");
   await p.click("#nowToggle");
   await p.clock.runFor(5000);
   eq(await text(p, "#nowLabel"), "En cours");
@@ -547,6 +540,7 @@ spec("F3", "lancer : nouvelle liste démarrée, en parallèle de l'existante", a
   await p.click("#nowToggle");
   await createRoutineUI(p, "Cuisine", ["Éplucher 5m", "Cuire 20m"]);
   await p.locator(".routine-row [data-action=launch]").click();
+  await p.click("#launchGo");
   eq(await chipNames(p), ["Ma liste", "Cuisine"]);
   eq(await chip(p, "Cuisine").getAttribute("aria-pressed"), "true");
   eq(await titlesOf(p), ["Éplucher", "Cuire"]);
@@ -704,7 +698,11 @@ spec("C3", "changer le temps sur la carte « Maintenant » (boutons et saisie)",
   await add(p, "A 10m");
   await p.click("#nowPlus5"); eq(await text(p, "#nowTimer"), "15:00");
   await p.click("#nowMinus5"); eq(await text(p, "#nowTimer"), "10:00");
-  await p.click("#nowPlus1"); eq(await text(p, "#nowTimer"), "11:00");
+  await p.click("#nowPlus5"); eq(await text(p, "#nowTimer"), "15:00");
+  await p.click("#nowMinus5"); eq(await text(p, "#nowTimer"), "10:00");
+  await p.click("#nowPlus5"); await p.click("#nowMinus5"); await p.click("#nowPlus5"); await p.click("#nowMinus5");
+  await p.click("#nowTimer"); await p.fill("#nowTimerInput", "11"); await p.press("#nowTimerInput", "Enter");
+  eq(await text(p, "#nowTimer"), "11:00");
   await p.click("#nowToggle");
   await p.clock.runFor(60000);
   await p.click("#nowToggle");
@@ -1083,19 +1081,22 @@ spec("H3", "choisir un son le fait entendre ; la fin du temps utilise ce son", a
 });
 
 // ================================================================ v8
-spec("C10", "carte « Maintenant » : grande horloge avec le temps au centre", async () => {
+spec("C10", "horloge compacte sur la carte (temps au centre), grande en vue maximisée", async () => {
   const p = await openPhone();
   await add(p, "A 10m");
   await p.click("#nowToggle");
   const vw = await p.evaluate(() => window.innerWidth);
   const clock = await p.locator("#nowClock").boundingBox();
-  assert(clock.width >= vw * 0.6, `horloge trop petite : ${clock.width}px pour ${vw}px`);
+  assert(clock.width >= 88 && clock.width <= 130, `horloge compacte : ${clock.width}px`);
   const digits = await p.locator("#nowTimer").boundingBox();
   const cx = (b) => b.x + b.width / 2, cy = (b) => b.y + b.height / 2;
   assert(Math.abs(cx(digits) - cx(clock)) < 12 && Math.abs(cy(digits) - cy(clock)) < 12, "chiffres au centre de l'horloge");
-  await p.locator("#nowClock").click({ position: { x: 24, y: clock.height / 2 } }); // sur le bord de l'horloge
+  await p.locator("#nowClock").click({ position: { x: 6, y: clock.height / 2 } }); // sur le bord de l'horloge
   assert(await p.locator("#nowTimerInput").isVisible(), "toucher l'horloge ouvre la saisie");
   await p.keyboard.press("Escape");
+  await p.click("#nowFocus");
+  const big = await p.locator("#focusClock").boundingBox();
+  assert(big.width >= vw * 0.6, `grande horloge en vue maximisée : ${big.width}px pour ${vw}px`);
   return p;
 });
 spec("C10", "cadran minuteur : 60 graduations, chiffres 0 à 55, part = minutes restantes", async () => {
@@ -1464,6 +1465,237 @@ spec("C12", "bouton ↺ : remettre le temps de la tâche à zéro (annulable)", 
   await p.clock.runFor(30000);
   await p.click("#focusReset");
   eq(await text(p, "#focusTimer"), "10:00");
+  return p;
+});
+
+// ================================================================ v14
+const AXE = fs.readFileSync(path.join(ROOT, "node_modules/axe-core/axe.min.js"), "utf8");
+async function axe(p, label) {
+  if (!p.axeReady) { await p.addScriptTag({ content: AXE }); p.axeReady = true; }
+  await p.clock.resume(); // axe-core utilise des minuteries
+  const v = await p.evaluate(async () => (await window.axe.run(document, { runOnly: { type: "tag", values: ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"] } })).violations
+    .map((x) => `${x.id}: ${x.nodes.slice(0, 3).map((n) => n.target.join(" ")).join(", ")}`));
+  if (v.length) throw new Error(`${label} — ${v.join(" | ")}`);
+}
+const ms = (page) => page.locator("#taskList .milestone");
+const adjOf = (page, i) => card(page, i).locator(".adj").textContent().then((x) => x.trim());
+
+spec("U1", "carte compacte : le champ d'ajout et la file restent visibles sur téléphone", async () => {
+  const p = await openPhone();
+  await add(p, "Rédiger le compte rendu 20m"); await add(p, "Point d'équipe 30m"); await add(p, "Démo 25m");
+  await p.click("#nowToggle");
+  const r = await p.evaluate(() => {
+    const box = (id) => document.getElementById(id).getBoundingClientRect();
+    const first = document.querySelector("#taskList .task-card").getBoundingClientRect();
+    return { add: box("quickAdd"), hero: box("nowCard"), first, tab: box("tabbar"), vh: innerHeight };
+  });
+  assert(r.add.bottom < r.hero.top, "champ d'ajout au-dessus de la carte");
+  assert(r.hero.height <= 240, `carte compacte (${Math.round(r.hero.height)} px)`);
+  assert(r.first.top + 40 < r.tab.top, "première tâche de la file visible sans défiler");
+  for (const id of ["nowMinus5", "nowPlus5", "nowToggle", "nowDone", "nowFocus", "nowLater", "nowMenu"]) assert(await p.locator("#" + id).isVisible(), id + " visible");
+  return p;
+});
+spec("U6", "pas de textes d'aide permanents", async () => {
+  const p = await open();
+  await add(p, "A 10m");
+  const body = await p.evaluate(() => document.body.innerText);
+  assert(!/toucher l.horloge/i.test(body) && !/en fin de saisie/i.test(body), "aucune aide permanente");
+  eq(await p.locator(".hint, .edit-hint").count(), 0);
+  return p;
+});
+spec("U8", "responsive 320 → 600 px : rien ne déborde", async () => {
+  const p = await open();
+  await add(p, "Un titre de tâche vraiment très long pour voir comment il se comporte 45m"); await add(p, "B 1h30");
+  await p.click("#nowToggle");
+  await p.click("#nowPlus5"); await p.clock.runFor(1000);
+  for (const w of [320, 360, 390, 412, 600]) {
+    await p.setViewportSize({ width: w, height: 760 });
+    await p.clock.runFor(300);
+    const bad = await p.evaluate(() => {
+      const out = [];
+      if (document.documentElement.scrollWidth > innerWidth + 1) out.push("page " + document.documentElement.scrollWidth);
+      const c = document.getElementById("nowCard").getBoundingClientRect();
+      document.querySelectorAll("#nowCard *").forEach((e) => {
+        if (e.closest("[hidden]") || e.closest(".edge-label")) return;
+        const r = e.getBoundingClientRect();
+        if (!r.width) return;
+        if (r.left < c.left - 1 || r.right > c.right + 1) out.push((e.id || e.className.baseVal || e.className) + " " + Math.round(r.left) + "-" + Math.round(r.right));
+      });
+      return out;
+    });
+    eq(bad, [], `largeur ${w} :`);
+  }
+  return p;
+});
+spec("U7", "accessibilité : aucune violation axe-core (clair et sombre)", async () => {
+  const p = await openPhone();
+  await add(p, "A 30m"); await add(p, "B 30m"); await add(p, "C 20m");
+  await p.click("#addDeadline"); await p.fill("#dlTime", "09:40"); await p.click("#dlSave");
+  await p.click("#nowToggle");
+  await axe(p, "liste");
+  await p.click("#nowMenu"); await axe(p, "fiche tâche"); await p.click("#tsClose");
+  await p.click("[data-tab=routines]"); await axe(p, "routines");
+  await p.click("[data-tab=settings]"); await axe(p, "réglages");
+  await p.selectOption("#setTheme", "dark");
+  await p.click("[data-tab=list]"); await axe(p, "liste sombre");
+  await p.click("#nowFocus"); await axe(p, "vue maximisée sombre");
+  return p;
+});
+spec("C7", "vue maximisée : glisser vers la gauche termine la tâche (annulable)", async () => {
+  const p = await openPhone();
+  await add(p, "Emails 10m"); await add(p, "Rapport 10m");
+  await p.click("#nowFocus");
+  eq(await text(p, "#focusTitle"), "Emails");
+  const b = await p.locator("#focusCard").boundingBox();
+  const y = b.y + b.height / 2;
+  // glisser trop court : revient en place
+  await p.mouse.move(b.x + b.width / 2, y); await p.mouse.down();
+  await p.mouse.move(b.x + b.width / 2 - 40, y, { steps: 5 }); await p.mouse.up();
+  await p.clock.runFor(400);
+  eq(await text(p, "#focusTitle"), "Emails");
+  // glisser franc vers la gauche
+  await p.mouse.move(b.x + b.width / 2, y); await p.mouse.down();
+  await p.mouse.move(b.x + b.width / 2 - 220, y, { steps: 8 }); await p.mouse.up();
+  await p.clock.runFor(600);
+  eq(await text(p, "#focusTitle"), "Rapport");
+  assert((await text(p, "#toastMsg")).includes("Emails"), "bandeau « terminée »");
+  await p.click("#toastUndo");
+  eq(await text(p, "#focusTitle"), "Emails");
+  return p;
+});
+spec("T3", "jalon « Fin voulue » : poser, raccourcir, déplacer, retirer", async () => {
+  const p = await open();
+  await add(p, "A 30m"); await add(p, "B 30m"); await add(p, "C 20m");
+  await p.click("#addDeadline");
+  await p.fill("#dlTime", "09:40");
+  await p.click("#dlSave");
+  eq(await ms(p).count(), 1);
+  assert((await ms(p).textContent()).includes("09:40"), "heure du jalon");
+  eq(await p.evaluate(() => [...document.querySelectorAll("#taskList > li")].map((x) => x.classList.contains("milestone") ? "|" : "t").join("")), "tt|", "jalon après la dernière tâche");
+  eq(await adjOf(p, 0), "15 min"); eq(await adjOf(p, 1), "10 min");
+  assert(await card(p, 0).evaluate((e) => e.classList.contains("compressed")), "prévu barré");
+  eq(await text(p, "#nowTimer"), "15:00", "la carte « Maintenant » montre le temps ajusté");
+  assert((await text(p, "#nowPlanned")).includes("30 min"), "prévu rappelé");
+  eq(await text(p, "#listFinish"), "09:40");
+  assert((await text(p, "#listWanted")).includes("09:40"), "heure voulue au récap");
+  // monter le jalon d'un cran : A+B (60) pour 40 → 20 / 20 ; C n'est plus raccourcie
+  await ms(p).locator("[data-ms=up]").click();
+  eq(await p.evaluate(() => [...document.querySelectorAll("#taskList > li")].map((x) => x.classList.contains("milestone") ? "|" : "t").join("")), "t|t");
+  eq(await adjOf(p, 0), "20 min");
+  eq(await card(p, 1).locator(".adj").count(), 0, "C non raccourcie");
+  eq(await text(p, "#nowTimer"), "20:00");
+  // glisser le jalon tout en bas
+  await dragTo(p, ms(p).locator(".ms-main"), card(p, 1), 30);
+  eq(await p.evaluate(() => [...document.querySelectorAll("#taskList > li")].map((x) => x.classList.contains("milestone") ? "|" : "t").join("")), "tt|");
+  // retirer
+  await ms(p).locator(".ms-main").click();
+  await p.waitForSelector("#deadlineSheet:not([hidden])");
+  await p.click("#dlRemove");
+  eq(await ms(p).count(), 0);
+  eq(await card(p, 0).locator(".adj").count(), 0);
+  eq(await text(p, "#nowTimer"), "30:00", "tout est remis comme avant");
+  return p;
+});
+spec("T3", "fiche Modifier : « Finir cette tâche avant »", async () => {
+  const p = await open();
+  await add(p, "A 30m"); await add(p, "B 30m"); await add(p, "C 20m");
+  await menuFor(p, "B");
+  await p.fill("#tsFinishBy", "09:50");
+  await p.click("#tsSave");
+  eq(await p.evaluate(() => [...document.querySelectorAll("#taskList > li")].map((x) => x.classList.contains("milestone") ? "|" : "t").join("")), "t|t");
+  eq(await adjOf(p, 0), "25 min");
+  await menuFor(p, "B");
+  eq(await p.inputValue("#tsFinishBy"), "09:50");
+  await p.click("#tsFinishClear");
+  await p.click("#tsSave");
+  eq(await ms(p).count(), 0);
+  return p;
+});
+spec("T4", "le temps ajusté décompte, ±5 et la saisie font s'adapter les autres", async () => {
+  const p = await open();
+  await add(p, "A 30m"); await add(p, "B 30m");
+  await p.click("#addDeadline"); await p.fill("#dlTime", "09:40"); await p.click("#dlSave");
+  await p.click("#nowToggle");
+  eq(await text(p, "#nowTimer"), "20:00");
+  await p.clock.runFor(60000);
+  eq(await text(p, "#nowTimer"), "19:00");
+  await p.click("#nowPlus5");
+  eq(await text(p, "#nowTimer"), "24:00");
+  eq(await adjOf(p, 0), "15 min", "B absorbe");
+  await p.click("#nowTimer"); await p.fill("#nowTimerInput", "10"); await p.press("#nowTimerInput", "Enter");
+  eq(await text(p, "#nowTimer"), "10:00");
+  eq(await adjOf(p, 0), "29 min");
+  // modifier la durée prévue de B dans la file
+  await card(p, 0).locator(".task-minutes").fill("90");
+  await card(p, 0).locator(".task-minutes").press("Enter");
+  assert((await text(p, "#nowTimer")) < "10:00", "A raccourcie à son tour : " + await text(p, "#nowTimer"));
+  eq(await text(p, "#listFinish"), "09:40");
+  // fin ajustée atteinte : signal
+  const left = await text(p, "#nowTimer");
+  const [mm, ss] = left.split(":").map(Number);
+  await p.clock.runFor((mm * 60 + ss + 1) * 1000);
+  eq(await text(p, "#nowLabel"), "Temps écoulé");
+  return p;
+});
+spec("F7", "routine : horaire « finir à » dans l'éditeur, choix au lancement", async () => {
+  const p = await open();
+  await p.click("[data-tab=routines]");
+  await p.click("#newRoutineBtn");
+  await p.fill("#reName", "Matin");
+  for (const x of ["Café 45m", "Douche 30m"]) { await p.fill("#reAdd", x); await p.press("#reAdd", "Enter"); }
+  await p.click("[data-timing=start]");
+  await p.fill("#reTime", "08:00");
+  assert((await text(p, "#reWindow")).includes("09:15"), "fin estimée");
+  await p.click("[data-timing=end]");
+  await p.fill("#reTime", "10:00");
+  assert((await text(p, "#reWindow")).includes("08:45"), "début au plus tard");
+  await p.click("#reSave");
+  assert((await p.locator(".routine-row").textContent()).includes("08:45 → 10:00"), "créneau dans la liste des routines");
+  await p.click(".routine-row [data-action=launch]");
+  await p.waitForSelector("#launchSheet:not([hidden])");
+  eq(await p.getAttribute("[data-launch=end]", "aria-pressed"), "true");
+  eq(await p.inputValue("#launchTime"), "10:00");
+  assert((await text(p, "#launchInfo")).includes("20 %"), "raccourci annoncé : " + await text(p, "#launchInfo"));
+  await p.click("[data-launch=now]");
+  assert((await text(p, "#launchInfo")).includes("10:15"), "fin estimée si maintenant");
+  await p.click("[data-launch=end]");
+  await p.click("#launchGo");
+  eq(await chip(p, "Matin").getAttribute("aria-pressed"), "true");
+  eq(await ms(p).count(), 1);
+  eq(await text(p, "#nowTimer"), "36:00");
+  return p;
+});
+spec("I1", "raccourcis T, L, S, E, F, +, −, H, 1-5", async () => {
+  const p = await open();
+  await add(p, "A 10m"); await add(p, "B 10m"); await add(p, "C 10m"); await add(p, "D 10m");
+  await p.locator("#quickAdd").blur();
+  await p.keyboard.press("+"); eq(await text(p, "#nowTimer"), "15:00");
+  await p.keyboard.press("-"); eq(await text(p, "#nowTimer"), "10:00");
+  await p.keyboard.press("t"); eq(await text(p, "#nowTitle"), "B");
+  await p.keyboard.press("l"); eq(await text(p, "#nowTitle"), "C");
+  await p.keyboard.press("Space");
+  await p.keyboard.press("s"); eq(await text(p, "#nowTitle"), "D");
+  await p.keyboard.press("e"); assert(await p.locator("#taskSheet").isVisible(), "fiche ouverte");
+  await p.keyboard.press("Escape");
+  await p.keyboard.press("h"); assert(await p.locator("#deadlineSheet").isVisible(), "heure de fin");
+  await p.keyboard.press("Escape");
+  await p.keyboard.press("f"); assert(await p.locator("#viewFocus").isVisible(), "vue maximisée");
+  await p.keyboard.press("Escape");
+  await p.keyboard.press("2"); assert(await p.locator("#viewLater").isVisible(), "onglet 2");
+  await p.keyboard.press("5"); assert(await p.locator("#viewSettings").isVisible(), "onglet 5");
+  await p.keyboard.press("1"); assert(await p.locator("#viewList").isVisible(), "onglet 1");
+  return p;
+});
+spec("I2", "page des raccourcis et gestes (touche ? ou Réglages)", async () => {
+  const p = await open();
+  await p.keyboard.press("?");
+  await p.waitForSelector("#shortcutsSheet:not([hidden])");
+  const t = await text(p, "#shortcutsSheet");
+  for (const k of ["Espace", "Maj+Entrée", "glisser", "gauche"]) assert(t.includes(k), "mentionne " + k);
+  await p.keyboard.press("Escape");
+  await p.click("[data-tab=settings]");
+  await p.click("#openShortcuts");
+  assert(await p.locator("#shortcutsSheet").isVisible(), "ouvert depuis les réglages");
   return p;
 });
 

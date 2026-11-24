@@ -882,3 +882,165 @@ spec("C12", "remettre à zéro : en pause, durée non entière arrondie, tâche 
   expect(a.spentSec).toBe(0);
   expect(C.resetTime(s, "nope", T0)).toBe(s);
 });
+
+// ================================================================ v14 — heures limites
+const at = (h, m) => new Date(2026, 10, 19, h, m, 0).getTime();
+const NOW = at(14, 0);
+const mins = (p) => p.tasks.map((x) => Math.round(x.adjustedSec / 60));
+spec("T1", "sans heure limite : temps ajusté = temps prévu", () => {
+  const s = withTasks({ title: "A", minutes: 30 }, { title: "B", minutes: 30 });
+  const p = C.plan(s, L(s), NOW);
+  expect(mins(p)).toEqual([30, 30]);
+  expect(p.tasks.map((x) => C.fmtClock(x.endAtMs))).toEqual(["14:30", "15:00"]);
+  expect(p.segments).toEqual([]);
+});
+spec("T1", "heure de fin de liste plus courte : raccourci proportionnel", () => {
+  let s = withTasks({ title: "A", minutes: 30 }, { title: "B", minutes: 60 });
+  s = C.setListFinishBy(s, L(s), at(15, 0));
+  const p = C.plan(s, L(s), NOW);
+  expect(mins(p)).toEqual([20, 40]);
+  expect(p.tasks.map((x) => Math.round(x.plannedSec / 60))).toEqual([30, 60]);
+  expect(C.fmtClock(p.tasks[1].endAtMs)).toBe("15:00");
+  expect(p.segments[0]).toEqual({ endIndex: 1, deadlineAtMs: at(15, 0), plannedSec: 5400, availableSec: 3600, factor: 2 / 3, late: false });
+  expect(tasks(s)[0].minutes).toBe(30); // les durées prévues ne changent pas
+});
+spec("T1", "jamais allongé ; retirer l'heure remet comme avant ; heure dépassée", () => {
+  let s = withTasks({ title: "A", minutes: 30 });
+  s = C.setListFinishBy(s, L(s), at(18, 0));
+  expect(mins(C.plan(s, L(s), NOW))).toEqual([30]);
+  expect(C.plan(s, L(s), NOW).segments[0].factor).toBe(1);
+  s = C.setListFinishBy(s, L(s), null);
+  expect(list(s).finishByMs).toBe(undefined);
+  s = C.setListFinishBy(s, L(s), at(13, 0));
+  const p = C.plan(s, L(s), NOW);
+  expect(mins(p)).toEqual([30]); // heure dépassée : on garde le prévu, signalé en retard
+  expect(p.segments[0].late).toBe(true);
+});
+spec("T2", "limite au milieu de la liste : seules les tâches jusqu'à elle sont raccourcies", () => {
+  let s = withTasks({ title: "A", minutes: 60 }, { title: "B", minutes: 60 }, { title: "C", minutes: 30 }, { title: "D", minutes: 30 });
+  s = C.setTaskFinishBy(s, tid(s, 1), at(15, 0)); // A+B (2 h) doivent tenir en 1 h
+  const p = C.plan(s, L(s), NOW);
+  expect(mins(p)).toEqual([30, 30, 30, 30]);
+  expect(p.tasks.map((x) => C.fmtClock(x.endAtMs))).toEqual(["14:30", "15:00", "15:30", "16:00"]);
+  s = C.setListFinishBy(s, L(s), at(15, 30)); // C+D (1 h) doivent tenir en 30 min après 15:00
+  expect(mins(C.plan(s, L(s), NOW))).toEqual([30, 30, 15, 15]);
+  expect(C.plan(s, L(s), NOW).segments.map((g) => g.endIndex)).toEqual([1, 3]);
+  s = C.setTaskFinishBy(s, tid(s, 1), null);
+  expect(tasks(s)[1].finishByMs).toBe(undefined);
+});
+spec("T2", "tâche en cours : seul le temps restant compte ; la limite suit la tâche quand on réordonne", () => {
+  let s = withTasks({ title: "A", minutes: 40 }, { title: "B", minutes: 20 });
+  s = C.startTask(s, L(s), null, NOW);
+  s = C.setTaskFinishBy(s, tid(s, 1), at(14, 50));
+  const p = C.plan(s, L(s), NOW + min(10)); // budget 40 dispo + 10 passées = 50 min pour 60 prévues
+  expect(mins(p)).toEqual([23, 17]);
+  expect(Math.round(p.tasks[0].budgetSec / 60)).toBe(33);
+  s = C.moveTaskToEdge(s, tid(s, 1), "top");
+  expect(tasks(s)[1].finishByMs).toBe(at(14, 50));
+  const re = C.normalizeState(JSON.parse(JSON.stringify(s)));
+  expect(tasks(re)[1].finishByMs).toBe(at(14, 50));
+});
+spec("T1", "heure du jour → horodatage", () => {
+  expect(C.timeOfDayToMs(NOW, "15:30")).toBe(at(15, 30));
+  expect(C.timeOfDayToMs(NOW, "7:05")).toBe(at(7, 5));
+  expect(C.timeOfDayToMs(NOW, "25:00")).toBeNull();
+  expect(C.timeOfDayToMs(NOW, "")).toBeNull();
+  expect(C.msToTimeOfDay(at(9, 5))).toBe("09:05");
+});
+spec("F7", "horaire de routine : début → fin estimée, fin → début au plus tard", () => {
+  let s = C.createRoutine(C.createState(), "Matin", [{ title: "A", minutes: 45 }, { title: "B", minutes: 30 }], { mode: "start", time: "7:00" });
+  expect(s.routines[0].timing).toEqual({ mode: "start", time: "07:00" });
+  expect(C.routineWindow(s.routines[0])).toEqual({ start: "07:00", end: "08:15", totalMin: 75 });
+  s = C.updateRoutine(s, s.routines[0].id, { name: "Matin", items: s.routines[0].items, timing: { mode: "end", time: "09:00" } });
+  expect(C.routineWindow(s.routines[0])).toEqual({ start: "07:45", end: "09:00", totalMin: 75 });
+  s = C.updateRoutine(s, s.routines[0].id, { name: "Matin", items: s.routines[0].items, timing: { mode: "end", time: "0:30" } });
+  expect(C.routineWindow(s.routines[0]).start).toBe("23:15");
+  s = C.updateRoutine(s, s.routines[0].id, { name: "Matin", items: s.routines[0].items, timing: null });
+  expect(s.routines[0].timing).toBe(undefined);
+  expect(C.routineWindow(s.routines[0])).toBeNull();
+});
+spec("F7", "lancer une routine « finir à » pose l'heure de fin voulue sur la liste", () => {
+  let s = C.createRoutine(C.createState(), "R", [{ title: "A", minutes: 60 }], { mode: "end", time: "14:45" });
+  s = C.launchRoutine(s, s.routines[0].id, NOW, { start: false });
+  expect(list(s).finishByMs).toBe(at(14, 45));
+  expect(mins(C.plan(s, L(s), NOW))).toEqual([45]);
+  let t = C.createRoutine(C.createState(), "R", [{ title: "A" }], { mode: "end", time: "13:00" }); // déjà passée
+  t = C.launchRoutine(t, t.routines[0].id, NOW, { start: false });
+  expect(list(t).finishByMs).toBe(undefined);
+});
+
+// ================================================================ v14 — les autres tâches s'adaptent
+spec("T4", "le minuteur ajusté décompte à vitesse normale et sonne à la fin ajustée", () => {
+  let s = withTasks({ title: "A", minutes: 30 }, { title: "B", minutes: 30 });
+  s = C.setTaskFinishBy(s, tid(s, 1), at(14, 40)); // 60 min prévues pour 40 dispo → A 20, B 20
+  s = C.startTask(s, L(s), null, NOW);
+  expect(C.effectiveRemainingSec(s, tid(s, 0), NOW)).toBe(1200);
+  expect(C.effectiveRemainingSec(s, tid(s, 0), NOW + min(5))).toBe(900);
+  expect(C.remainingSec(s, tid(s, 0), NOW + min(5))).toBe(1500); // le prévu ne change pas
+  expect(C.checkTimeUp(s, NOW + min(19)).fired).toEqual([]);
+  expect(C.checkTimeUp(s, NOW + min(20)).fired.length).toBe(1);
+  const al = C.upcomingAlarms(s, NOW + sec(30));
+  expect(al.map((a) => C.fmtClock(a.atMs))).toEqual(["14:20"]);
+  expect(C.tabTitle(s, NOW + min(5))).toBe("15:00 · A");
+  // passage automatique : A se termine à 14:20, B a ses 20 min jusqu'à 14:40
+  s = C.updateSettings(s, { autoAdvance: true });
+  expect(C.upcomingAlarms(s, NOW).map((a) => C.fmtClock(a.atMs))).toEqual(["14:20", "14:40"]);
+  const r = C.advanceTimeUp(s, NOW + min(21));
+  expect(r.completed.length).toBe(1);
+  expect(C.effectiveRemainingSec(r.state, tid(r.state, 0), NOW + min(21))).toBe(1140);
+});
+spec("T4", "changer la durée prévue d'une tâche du tronçon redistribue le temps", () => {
+  let s = withTasks({ title: "A", minutes: 30 }, { title: "B", minutes: 30 }, { title: "C", minutes: 20 });
+  s = C.setTaskFinishBy(s, tid(s, 1), at(14, 40));
+  expect(mins(C.plan(s, L(s), NOW))).toEqual([20, 20, 20]);
+  s = C.updateTask(s, tid(s, 0), { minutes: 50 }); // 80 prévues pour 40 → ×0,5
+  expect(mins(C.plan(s, L(s), NOW))).toEqual([25, 15, 20]);
+  expect(C.fmtClock(C.plan(s, L(s), NOW).tasks[1].endAtMs)).toBe("14:40");
+});
+spec("T4", "régler le temps affiché de la tâche en cours : les autres absorbent", () => {
+  let s = withTasks({ title: "A", minutes: 30 }, { title: "B", minutes: 30 }, { title: "C", minutes: 20 });
+  s = C.setTaskFinishBy(s, tid(s, 1), at(14, 40));
+  s = C.startTask(s, L(s), null, NOW);
+  const r = C.setShownRemaining(s, L(s), 30 * 60, NOW + min(5)); // A affichait 15:00, on veut 30:00
+  expect(r.capped).toBe(false);
+  const p = C.plan(r.state, L(r.state), NOW + min(5));
+  expect(C.shownSec(p.tasks[0].adjustedSec)).toBe(1800);
+  expect(Math.round(p.tasks[1].adjustedSec / 60)).toBe(5); // 35 min dispo − 30
+  expect(C.fmtClock(p.tasks[1].endAtMs)).toBe("14:40");
+  expect(C.isRunning(r.state, L(r.state))).toBe(true);
+  expect(C.effectiveRemainingSec(r.state, tid(r.state, 0), NOW + min(6))).toBe(1740);
+  // +5 min de plus que le temps dispo : limité
+  const c = C.setShownRemaining(s, L(s), 60 * 60, NOW + min(5));
+  expect(c.capped).toBe(true);
+  expect(C.effectiveRemainingSec(c.state, tid(c.state, 0), NOW + min(5)) <= 35 * 60).toBe(true);
+  // sans heure limite : identique à setRemainingSec
+  const plain = withTasks({ title: "A", minutes: 30 });
+  expect(tasks(C.setShownRemaining(plain, L(plain), 600, NOW).state)[0].minutes).toBe(10);
+});
+spec("T4", "heure dépassée : plus de raccourci (durées prévues), signalée en retard", () => {
+  let s = withTasks({ title: "A", minutes: 30 }, { title: "B", minutes: 30 });
+  s = C.setTaskFinishBy(s, tid(s, 1), at(13, 0));
+  const p = C.plan(s, L(s), NOW);
+  expect(mins(p)).toEqual([30, 30]);
+  expect(p.segments[0].late).toBe(true);
+});
+spec("T3", "déplacer un jalon d'une tâche à une autre (ou depuis la fin de liste)", () => {
+  let s = withTasks({ title: "A", minutes: 30 }, { title: "B", minutes: 30 }, { title: "C", minutes: 30 });
+  s = C.setTaskFinishBy(s, tid(s, 2), at(15, 0));
+  s = C.moveFinishBy(s, L(s), tid(s, 2), tid(s, 0));
+  expect(tasks(s).map((t) => t.finishByMs ?? null)).toEqual([at(15, 0), null, null]);
+  s = C.setListFinishBy(s, L(s), at(16, 0));
+  s = C.moveFinishBy(s, L(s), null, tid(s, 1));
+  expect(list(s).finishByMs).toBe(undefined);
+  expect(tasks(s)[1].finishByMs).toBe(at(16, 0));
+  expect(C.moveFinishBy(s, L(s), tid(s, 1), tid(s, 0))).toBe(s); // déjà un jalon : refusé
+});
+spec("F7", "au lancement : choisir une autre heure de fin, ou aucune", () => {
+  let s = C.createRoutine(C.createState(), "R", [{ title: "A", minutes: 60 }], { mode: "end", time: "14:45" });
+  const a = C.launchRoutine(s, s.routines[0].id, NOW, { finishByMs: at(14, 30) });
+  expect(list(a).finishByMs).toBe(at(14, 30));
+  const b = C.launchRoutine(s, s.routines[0].id, NOW, { finishByMs: null });
+  expect(list(b).finishByMs).toBe(undefined);
+  const c = C.launchRoutine(s, s.routines[0].id, NOW, { start: false, finishByMs: null });
+  expect(list(c).active).toBe(null);
+});

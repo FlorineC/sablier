@@ -1,5 +1,5 @@
 // Service worker : l'appli s'ouvre hors ligne ; en ligne, on prend toujours la version la plus récente.
-const CACHE = "sablier-v10";
+const CACHE = "sablier-v14";
 const ASSETS = ["./", "index.html", "app.css", "app.js", "core.js", "notify.js", "firebase-config.js", "vendor/firebase.js",
   "manifest.webmanifest", "icons/icon-192.png", "icons/icon-512.png"];
 

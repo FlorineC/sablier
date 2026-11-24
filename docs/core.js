@@ -98,6 +98,7 @@ function normalizeTaskList(arr, seen, extra) {
       minutes: toStoredMinutes(raw.minutes) ?? DEFAULT_SETTINGS.defaultMinutes,
       spentSec: Number.isFinite(spent) && spent > 0 ? Math.floor(spent) : 0,
     };
+    if (Number.isFinite(raw.finishByMs)) t.finishByMs = raw.finishByMs;
     if (extra) extra(t, raw);
     out.push(t);
   }
@@ -138,6 +139,7 @@ export function normalizeState(raw) {
       list.tasks = normalizeTaskList(l.tasks, seenTasks);
       normalizeActive(list, l.active);
       list.alertedTaskId = typeof l.alertedTaskId === "string" ? l.alertedTaskId : null;
+      if (Number.isFinite(l.finishByMs)) list.finishByMs = l.finishByMs;
       return list;
     });
     if (!s.lists.length) s.lists = [newList(MAIN_LIST_ID, MAIN_LIST_NAME)];
@@ -170,7 +172,12 @@ export function normalizeState(raw) {
   const rawRoutines = raw.routines ?? raw.presets;
   s.routines = (Array.isArray(rawRoutines) ? rawRoutines : [])
     .filter((r) => r && typeof r === "object")
-    .map((r) => ({ id: typeof r.id === "string" && r.id ? r.id : uid(), name: String(r.name ?? "").trim() || "Routine", items: normalizeItems(r.items) }))
+    .map((r) => {
+      const out = { id: typeof r.id === "string" && r.id ? r.id : uid(), name: String(r.name ?? "").trim() || "Routine", items: normalizeItems(r.items) };
+      const timing = cleanTiming(r.timing);
+      if (timing) out.timing = timing;
+      return out;
+    })
     .filter((r) => r.items.length > 0);
   s.settings = normalizeSettings(raw.settings);
   s.updatedAtMs = Number.isFinite(raw.updatedAtMs) ? raw.updatedAtMs : 0;
@@ -505,7 +512,7 @@ export function advanceTimeUp(state, now) {
       const list = getList(s, id);
       if (!listRunning(list)) break;
       const taskId = list.active.taskId;
-      const rem = remainingSec(s, taskId, now);
+      const rem = effectiveRemainingSec(s, taskId, now);
       if (rem > 0) break;
       s = completeInternal(s, id, now + rem * 1000, taskId, true);
       completed.push({ listId: id, taskId });
@@ -563,7 +570,7 @@ export function checkTimeUp(state, now) {
   for (const l of state.lists) {
     if (!listRunning(l)) continue;
     const id = l.active.taskId;
-    if (l.alertedTaskId !== id && remainingSec(state, id, now) <= 0) fired.push({ listId: l.id, taskId: id });
+    if (l.alertedTaskId !== id && effectiveRemainingSec(state, id, now) <= 0) fired.push({ listId: l.id, taskId: id });
   }
   if (!fired.length) return { state, fired };
   const s = clone(state);
@@ -717,15 +724,18 @@ function cleanRoutineItems(items) {
   return out;
 }
 
-export function createRoutine(state, name, items) {
+export function createRoutine(state, name, items, timing) {
   const n = String(name ?? "").trim();
   const clean = cleanRoutineItems(items);
   if (!n || !clean.length) return state;
   const s = clone(state);
-  s.routines.push({ id: uid(), name: n, items: clean });
+  const r = { id: uid(), name: n, items: clean };
+  const t = cleanTiming(timing);
+  if (t) r.timing = t;
+  s.routines.push(r);
   return s;
 }
-export function updateRoutine(state, id, { name, items } = {}) {
+export function updateRoutine(state, id, { name, items, timing } = {}) {
   const n = String(name ?? "").trim();
   const clean = cleanRoutineItems(items);
   if (!n || !clean.length || !state.routines.some((r) => r.id === id)) return state;
@@ -733,6 +743,8 @@ export function updateRoutine(state, id, { name, items } = {}) {
   const r = s.routines.find((x) => x.id === id);
   r.name = n;
   r.items = clean;
+  const t = cleanTiming(timing);
+  if (t) r.timing = t; else delete r.timing;
   return s;
 }
 export function saveListAsRoutine(state, listId, name) {
@@ -752,13 +764,18 @@ export function loadRoutine(state, routineId, listId, mode = "replace") {
   else { list.tasks = freshTasks(r); list.active = null; list.alertedTaskId = null; }
   return s;
 }
-export function launchRoutine(state, routineId, now, { start = true } = {}) {
+// finishByMs : undefined = horaire de la routine ; null = aucune heure limite ; nombre = cette heure.
+export function launchRoutine(state, routineId, now, { start = true, finishByMs } = {}) {
   const r = state.routines.find((x) => x.id === routineId);
   if (!r) return state;
   const s = clone(state);
   const list = newList(uid(), r.name);
   list.tasks = freshTasks(r);
   if (start && list.tasks.length) list.active = { taskId: list.tasks[0].id, startedAtMs: now };
+  if (finishByMs === undefined && r.timing && r.timing.mode === "end") {
+    const end = timeOfDayToMs(now, r.timing.time);
+    if (end !== null && end > now) list.finishByMs = end;
+  } else if (Number.isFinite(finishByMs) && finishByMs > now) list.finishByMs = finishByMs;
   s.lists.push(list);
   s.currentListId = list.id;
   return s;
@@ -826,7 +843,7 @@ export function fmtClock(ms) {
 export function tabTitle(state, now) {
   const running = state.lists.filter(listRunning).map((l) => {
     const t = l.tasks.find((x) => x.id === l.active.taskId);
-    return { t, rem: remainingSec(state, t.id, now) };
+    return { t, rem: effectiveRemainingSec(state, t.id, now) };
   }).sort((a, b) => a.rem - b.rem);
   if (!running.length) return activeLists(state).length ? "⏸ Sablier" : "Sablier";
   const [first] = running;
@@ -862,6 +879,17 @@ export function upcomingAlarms(state, now) {
   for (const l of state.lists) {
     if (!listRunning(l)) continue;
     const head = l.tasks.find((x) => x.id === l.active.taskId);
+    if (hasDeadlines(l)) {
+      const p = plan(state, l.id, now).tasks;
+      const chain = state.settings.autoAdvance ? p : p.filter((x) => x.taskId === head.id);
+      for (const x of chain) {
+        const t = l.tasks.find((y) => y.id === x.taskId);
+        const end = Math.round((now + x.adjustedSec * 1000) / 1000) * 1000;
+        const at = x.taskId === head.id ? end : Math.round(x.endAtMs / 1000) * 1000;
+        if (at > now) out.push({ id: hashId(l.id + "|" + t.id), listId: l.id, listName: l.name, taskId: t.id, title: t.title, emoji: t.emoji, atMs: at });
+      }
+      continue;
+    }
     // fin exacte de la tâche en cours (indépendante de l'instant du calcul)
     let cursor = l.active.startedAtMs + (totalSec(head) - head.spentSec) * 1000;
     const chain = [{ t: head, end: cursor }];
@@ -938,5 +966,158 @@ export function resetTime(state, taskId, now) {
   task.minutes = clamp(Math.round(task.minutes), MIN_MINUTES, MAX_MINUTES);
   if (list.active && list.active.taskId === taskId && listRunning(list)) list.active.startedAtMs = now;
   if (list.alertedTaskId === taskId) list.alertedTaskId = null;
+  return s;
+}
+
+// ---------------------------------------------------------------- heures limites (fin voulue)
+export function timeOfDayToMs(now, hhmm) {
+  const m = String(hhmm ?? "").trim().match(/^(\d{1,2}):(\d{2})$/);
+  if (!m || +m[1] > 23 || +m[2] > 59) return null;
+  const d = new Date(now);
+  d.setHours(+m[1], +m[2], 0, 0);
+  return d.getTime();
+}
+export const msToTimeOfDay = (ms) => fmtClock(ms);
+
+function cleanTiming(t) {
+  if (!t || typeof t !== "object" || !["start", "end"].includes(t.mode)) return null;
+  const m = String(t.time ?? "").trim().match(/^(\d{1,2}):(\d{2})$/);
+  if (!m || +m[1] > 23 || +m[2] > 59) return null;
+  return { mode: t.mode, time: `${pad2(+m[1])}:${m[2]}` };
+}
+
+// Fenêtre horaire d'une routine : l'autre borne est calculée à partir de la durée totale.
+export function routineWindow(routine) {
+  if (!routine || !routine.timing) return null;
+  const totalMin = routine.items.reduce((a, it) => a + Math.round(it.minutes), 0);
+  const [h, m] = routine.timing.time.split(":").map(Number);
+  const base = h * 60 + m;
+  const fmt = (x) => { const v = ((x % 1440) + 1440) % 1440; return `${pad2(Math.floor(v / 60))}:${pad2(v % 60)}`; };
+  return routine.timing.mode === "start"
+    ? { start: fmt(base), end: fmt(base + totalMin), totalMin }
+    : { start: fmt(base - totalMin), end: fmt(base), totalMin };
+}
+
+export function setTaskFinishBy(state, taskId, ms) {
+  if (!locate(state, taskId)) return state;
+  const s = clone(state);
+  const { task } = locate(s, taskId);
+  if (Number.isFinite(ms)) task.finishByMs = ms; else delete task.finishByMs;
+  return s;
+}
+export function setListFinishBy(state, listId, ms) {
+  if (!getList(state, listId)) return state;
+  const s = clone(state);
+  const l = getList(s, listId);
+  if (Number.isFinite(ms)) l.finishByMs = ms; else delete l.finishByMs;
+  return s;
+}
+
+// Planning avec heures limites : les durées prévues ne changent pas ; si une limite est plus
+// proche que le temps prévu, les tâches depuis la limite précédente (ou maintenant) sont
+// raccourcies proportionnellement (jamais allongées).
+// Budget d'un tronçon = temps jusqu'à la limite + temps déjà passé sur ses tâches ; chaque tâche
+// reçoit (durée prévue × facteur) − temps déjà passé. Le facteur ne bouge pas pendant que la tâche
+// en cours tourne : son temps ajusté décompte donc à vitesse normale.
+const hasDeadlines = (l) => !!l && (Number.isFinite(l.finishByMs) || l.tasks.some((t) => Number.isFinite(t.finishByMs)));
+export function plan(state, listId, now) {
+  const l = getList(state, listId);
+  if (!l) return { tasks: [], segments: [] };
+  const activeId = l.active ? l.active.taskId : null;
+  const P = l.tasks.map((t) => totalSec(t));
+  const E = l.tasks.map((t) => elapsedSec(state, t.id, now));
+  const rem = l.tasks.map((t, i) => (t.id === activeId ? P[i] - E[i] : Math.max(0, P[i] - E[i])));
+  const n = l.tasks.length;
+  const bounds = []; // [index de fin, échéance]
+  l.tasks.forEach((t, i) => {
+    let d = Number.isFinite(t.finishByMs) ? t.finishByMs : null;
+    if (i === n - 1 && Number.isFinite(l.finishByMs)) d = d === null ? l.finishByMs : Math.min(d, l.finishByMs);
+    if (d !== null) bounds.push([i, d]);
+  });
+  const adjusted = rem.slice();
+  const factors = l.tasks.map(() => 1);
+  const segments = [];
+  let segStartIdx = 0, cursor = now;
+  for (const [endIdx, deadline] of bounds) {
+    const idx = [];
+    for (let i = segStartIdx; i <= endIdx; i++) idx.push(i);
+    const planned = idx.reduce((a, i) => a + Math.max(0, rem[i]), 0);
+    const avail = (deadline - cursor) / 1000;
+    let K = avail + idx.reduce((a, i) => a + E[i], 0);
+    let factor = 1;
+    if (K > 0 && avail < planned) {
+      // répartition au prorata ; une tâche qui a déjà consommé plus que sa part reçoit 0
+      let free = idx.slice();
+      for (let guard = 0; guard < 100; guard++) {
+        const Pf = free.reduce((a, i) => a + P[i], 0);
+        factor = Pf > 0 ? Math.min(1, K / Pf) : 1;
+        const over = free.filter((i) => l.tasks[i].id !== activeId && P[i] * factor < E[i]);
+        if (!over.length) break;
+        for (const i of over) { adjusted[i] = 0; factors[i] = factor; K -= E[i]; }
+        free = free.filter((i) => !over.includes(i));
+      }
+      for (const i of free) { adjusted[i] = P[i] * factor - E[i]; factors[i] = factor; }
+    }
+    segments.push({ endIndex: endIdx, deadlineAtMs: deadline, plannedSec: Math.round(planned), availableSec: Math.max(0, Math.round(avail)), factor, late: !(K > 0) });
+    cursor += idx.reduce((a, i) => a + Math.max(0, adjusted[i]), 0) * 1000;
+    segStartIdx = endIdx + 1;
+  }
+  let t0 = now;
+  const tasks = l.tasks.map((t, i) => {
+    const start = Math.round(t0);
+    t0 += Math.max(0, adjusted[i]) * 1000;
+    return { taskId: t.id, startAtMs: start, endAtMs: Math.round(t0), plannedSec: rem[i], adjustedSec: adjusted[i], budgetSec: P[i] * factors[i], factor: factors[i] };
+  });
+  return { tasks, segments };
+}
+
+// Secondes affichées d'un temps ajusté (fractionnaire) : arrondi au-dessus, comme un minuteur.
+export const shownSec = (x) => Math.ceil(x - 1e-6);
+// Temps restant affiché (ajusté par les heures limites, sinon temps restant prévu).
+export function effectiveRemainingSec(state, taskId, now) {
+  const loc = locate(state, taskId);
+  if (!loc) return 0;
+  if (!hasDeadlines(loc.list)) return remainingSec(state, taskId, now);
+  const x = plan(state, loc.list.id, now).tasks.find((p) => p.taskId === taskId);
+  return x ? shownSec(x.adjustedSec) : 0;
+}
+
+// Fixe le temps restant AFFICHÉ de la tâche en cours (ou de la prochaine). Sous une heure limite,
+// la durée prévue est recalculée pour que le temps ajusté vaille `sec` ; les autres tâches du
+// tronçon absorbent la différence. → { state, capped } (capped : limité par l'heure de fin).
+export function setShownRemaining(state, listId, sec, now) {
+  const l = getList(state, listId);
+  const r = Number(sec);
+  if (!l || !l.tasks.length || sec === null || !Number.isFinite(r) || r < 1) return { state, capped: false };
+  if (!hasDeadlines(l)) return { state: setRemainingSec(state, listId, r, now), capped: false };
+  const s = clone(state);
+  const list = getList(s, listId);
+  const t = list.active ? list.tasks.find((x) => x.id === list.active.taskId) : list.tasks[0];
+  if (listRunning(list)) { accumulate(list, now); list.active.startedAtMs = now; }
+  list.alertedTaskId = null;
+  const shownWith = (m) => { t.minutes = m; return plan(s, listId, now).tasks.find((x) => x.taskId === t.id).adjustedSec; };
+  let lo = 1 / 60, hi = MAX_MINUTES;
+  const max = shownWith(hi);
+  const target = Math.min(r, max) - 0.5; // affiché arrondi au-dessus : vise juste en dessous
+  for (let k = 0; k < 60; k++) {
+    const mid = (lo + hi) / 2;
+    if (shownWith(mid) < target) lo = mid; else hi = mid;
+  }
+  t.minutes = clamp(Math.round(hi * 1e4) / 1e4, 1 / 60, MAX_MINUTES);
+  return { state: s, capped: r > max + 1 };
+}
+
+// Déplace une heure limite : de la tâche `fromTaskId` (null = fin de liste) vers la tâche `toTaskId`.
+export function moveFinishBy(state, listId, fromTaskId, toTaskId) {
+  const l = getList(state, listId);
+  if (!l) return state;
+  const from = fromTaskId ? l.tasks.find((t) => t.id === fromTaskId) : null;
+  const ms = from ? from.finishByMs : l.finishByMs;
+  const to = l.tasks.find((t) => t.id === toTaskId);
+  if (!Number.isFinite(ms) || !to || to === from || Number.isFinite(to.finishByMs)) return state;
+  const s = clone(state);
+  const list = getList(s, listId);
+  if (fromTaskId) delete list.tasks.find((t) => t.id === fromTaskId).finishByMs; else delete list.finishByMs;
+  list.tasks.find((t) => t.id === toTaskId).finishByMs = ms;
   return s;
 }

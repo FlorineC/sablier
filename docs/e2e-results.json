@@ -1,5 +1,5 @@
 {
- "ranAt": "2026-11-18T07:00:28.124Z",
+ "ranAt": "2026-11-19T07:55:39.292Z",
  "results": [
   {
    "specId": "L1",
@@ -23,7 +23,7 @@
   },
   {
    "specId": "L4",
-   "name": "piloter les minuteurs des autres listes depuis la barre d'ensemble",
+   "name": "pas de widget des autres listes : les pastilles montrent leurs minuteurs",
    "ok": true
   },
   {
@@ -328,7 +328,7 @@
   },
   {
    "specId": "C10",
-   "name": "carte « Maintenant » : grande horloge avec le temps au centre",
+   "name": "horloge compacte sur la carte (temps au centre), grande en vue maximisée",
    "ok": true
   },
   {
@@ -409,6 +409,61 @@
   {
    "specId": "C12",
    "name": "bouton ↺ : remettre le temps de la tâche à zéro (annulable)",
+   "ok": true
+  },
+  {
+   "specId": "U1",
+   "name": "carte compacte : le champ d'ajout et la file restent visibles sur téléphone",
+   "ok": true
+  },
+  {
+   "specId": "U6",
+   "name": "pas de textes d'aide permanents",
+   "ok": true
+  },
+  {
+   "specId": "U8",
+   "name": "responsive 320 → 600 px : rien ne déborde",
+   "ok": true
+  },
+  {
+   "specId": "U7",
+   "name": "accessibilité : aucune violation axe-core (clair et sombre)",
+   "ok": true
+  },
+  {
+   "specId": "C7",
+   "name": "vue maximisée : glisser vers la gauche termine la tâche (annulable)",
+   "ok": true
+  },
+  {
+   "specId": "T3",
+   "name": "jalon « Fin voulue » : poser, raccourcir, déplacer, retirer",
+   "ok": true
+  },
+  {
+   "specId": "T3",
+   "name": "fiche Modifier : « Finir cette tâche avant »",
+   "ok": true
+  },
+  {
+   "specId": "T4",
+   "name": "le temps ajusté décompte, ±5 et la saisie font s'adapter les autres",
+   "ok": true
+  },
+  {
+   "specId": "F7",
+   "name": "routine : horaire « finir à » dans l'éditeur, choix au lancement",
+   "ok": true
+  },
+  {
+   "specId": "I1",
+   "name": "raccourcis T, L, S, E, F, +, −, H, 1-5",
+   "ok": true
+  },
+  {
+   "specId": "I2",
+   "name": "page des raccourcis et gestes (touche ? ou Réglages)",
    "ok": true
   }
  ]
