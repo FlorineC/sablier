@@ -233,7 +233,9 @@ spec("A6", "monter / descendre avec les flèches de la carte", async () => {
   await card(p, 0).locator("[data-action=up]").click(); // rien ne tourne : peut devenir la prochaine
   eq(await titlesOf(p), ["D", "A", "B", "C"]);
   await p.click("#nowToggle");
-  assert(await card(p, 0).locator("[data-action=up]").isDisabled(), "ne peut pas passer devant la tâche en cours");
+  await card(p, 0).locator("[data-action=up]").click(); // devant la tâche en cours : devient la tâche en cours
+  eq(await titlesOf(p), ["A", "D", "B", "C"]);
+  eq(await text(p, "#nowLabel"), "En cours");
   assert(await card(p, 2).locator("[data-action=down]").isDisabled(), "dernière : descendre grisé");
   return p;
 });
@@ -777,13 +779,16 @@ spec("A10", "glisser sur « Maintenant » sans minuteur : devient la prochaine",
   eq(await text(p, "#nowLabel"), "Prochaine");
   return p;
 });
-spec("A11", "tout en haut / tout en bas en un clic sur la carte", async () => {
+spec("A11", "tout en haut = tâche en cours ; monter depuis la première carte aussi ; tout en bas", async () => {
   const p = await open();
   for (const t of ["A", "B", "C", "D"]) await add(p, t);
   await p.click("#nowToggle");
   await card(p, 2).locator("[data-action=top]").click();
+  eq(await titlesOf(p), ["D", "A", "B", "C"]);
+  eq(await text(p, "#nowLabel"), "En cours", "D démarre à la place de A");
+  assert(!(await card(p, 0).locator("[data-action=up]").isDisabled()), "monter possible depuis la 1re carte");
+  await card(p, 0).locator("[data-action=up]").click();
   eq(await titlesOf(p), ["A", "D", "B", "C"]);
-  assert(await card(p, 0).locator("[data-action=top]").isDisabled(), "déjà tout en haut");
   await card(p, 0).locator("[data-action=bottom]").click();
   eq(await titlesOf(p), ["A", "B", "C", "D"]);
   assert(await card(p, 2).locator("[data-action=bottom]").isDisabled(), "déjà tout en bas");
@@ -1344,6 +1349,7 @@ const CAPACITOR_MOCK = () => {
     hide: async () => { window.__timerCalls.push({ m: "hide" }); },
     batteryStatus: async () => ({ unrestricted: !!window.__batteryOk }),
     openBatterySettings: async () => { window.__timerCalls.push({ m: "battery" }); window.__batteryOk = true; },
+    keepAwake: async ({ on }) => { window.__timerCalls.push({ m: "awake", on }); },
     addListener: async (ev, cb) => { listeners.push(cb); return { remove: () => {} }; },
   };
   window.__timerEmit = (d) => listeners.forEach((cb) => cb(d));
@@ -1431,10 +1437,11 @@ spec("S1", "sans configuration : section Compte visible, configuration collée d
   await p.waitForSelector("#authSheet:not([hidden])");
   return p;
 });
-spec("S1", "l'indicateur en haut ouvre la connexion", async () => {
+spec("S1", "l'état de la synchro (dans les réglages) ouvre la connexion", async () => {
   const p = await openFirebase({});
   await p.waitForSelector("#authSheet:not([hidden])");
   await p.click("#authSkip");
+  await p.click("[data-tab=settings]");
   await p.click("#syncNote");
   await p.waitForSelector("#authSheet:not([hidden])");
   return p;
@@ -1500,10 +1507,10 @@ spec("U1", "carte compacte : le champ d'ajout et la file restent visibles sur t�
     const first = document.querySelector("#taskList .task-card").getBoundingClientRect();
     return { add: box("quickAdd"), hero: box("nowCard"), first, tab: box("tabbar"), vh: innerHeight };
   });
-  assert(r.add.bottom < r.hero.top, "champ d'ajout au-dessus de la carte");
-  assert(r.hero.height <= 240, `carte compacte (${Math.round(r.hero.height)} px)`);
+  assert(r.add.top > r.hero.bottom && r.add.bottom < r.first.top, "champ d'ajout entre la carte et la file");
+  assert(r.hero.height <= 250, `carte compacte (${Math.round(r.hero.height)} px)`);
   assert(r.first.top + 40 < r.tab.top, "première tâche de la file visible sans défiler");
-  for (const id of ["nowMinus5", "nowPlus5", "nowToggle", "nowDone", "nowFocus", "nowLater", "nowMenu"]) assert(await p.locator("#" + id).isVisible(), id + " visible");
+  for (const id of ["nowMinus5", "nowPlus5", "nowToggle", "nowDone", "nowFocus", "nowLater", "nowDelete", "nowMenu"]) assert(await p.locator("#" + id).isVisible(), id + " visible");
   return p;
 });
 spec("U6", "pas de textes d'aide permanents", async () => {
@@ -1958,6 +1965,114 @@ spec("N3", "Android : notification « minuteur en cours » avec Pause et Termine
   await p.click("#batteryBtn");
   await p.clock.runFor(300);
   eq((await last()).m, "battery");
+  return p;
+});
+
+// ================================================================ v18
+spec("U10", "pas de bandeau en haut ; champ d'ajout sous la carte « Maintenant »", async () => {
+  const p = await openPhone();
+  await add(p, "A 10m"); await add(p, "B 10m");
+  eq(await p.locator("header.topbar, .topbar").count(), 0, "plus d'en-tête");
+  const r = await p.evaluate(() => {
+    const b = (el) => el.getBoundingClientRect();
+    return { chips: b(document.getElementById("listBarWrap")), hero: b(document.getElementById("nowCard")), add: b(document.getElementById("quickAdd")), queue: b(document.querySelector("#taskList .task-card")) };
+  });
+  assert(r.chips.top < 60, "les listes en haut de l'écran : " + r.chips.top);
+  assert(r.add.top > r.hero.bottom && r.add.bottom < r.queue.top, "champ entre la carte et la file");
+  await p.click("[data-tab=settings]");
+  assert(await p.locator("#syncNote").isVisible(), "état de la synchro dans les réglages");
+  return p;
+});
+spec("A8", "supprimer la tâche en cours en un clic (annulable)", async () => {
+  const p = await open();
+  await add(p, "A 10m"); await add(p, "B 10m");
+  await p.click("#nowToggle");
+  await p.click("#nowDelete");
+  eq(await titlesOf(p), ["B"]);
+  eq(await text(p, "#nowLabel"), "En cours", "la suivante enchaîne");
+  await p.click("#toastUndo");
+  eq(await titlesOf(p), ["A", "B"]);
+  return p;
+});
+spec("A10", "glisser sur le champ d'ajout (au-dessus de la file) en fait aussi la tâche en cours", async () => {
+  const p = await open();
+  for (const t of ["A", "B", "C"]) await add(p, t + " 10m");
+  await p.click("#nowToggle");
+  await dragTo(p, card(p, 1).locator(".drag-handle"), p.locator("#quickAdd"));
+  eq(await titlesOf(p), ["C", "A", "B"]);
+  return p;
+});
+spec("T3", "descendre une tâche au-dessus d'un jalon : elle reste au-dessus", async () => {
+  const p = await open();
+  for (const t of ["H", "A", "B", "C"]) await add(p, t + " 10m");
+  await menuFor(p, "B"); await p.fill("#tsFinishBy", "11:00"); await p.click("#tsSave");
+  const shape = () => p.evaluate(() => [...document.querySelectorAll("#taskList > li")].map((x) => x.classList.contains("milestone") ? "|" : x.querySelector(".task-title").value).join(""));
+  eq(await shape(), "AB|C");
+  await card(p, 0).locator("[data-action=down]").click();
+  eq(await shape(), "BA|C");
+  return p;
+});
+spec("C7", "vue maximisée : glisser vers le haut supprime la tâche (annulable)", async () => {
+  const p = await openPhone();
+  await add(p, "Emails 10m"); await add(p, "Rapport 10m");
+  await p.click("#nowFocus");
+  const b = await p.locator("#focusCard").boundingBox();
+  const x = b.x + b.width / 2, y = b.y + b.height / 2;
+  await p.mouse.move(x, y); await p.mouse.down();
+  await p.mouse.move(x, y - 40, { steps: 4 }); await p.mouse.up();
+  await p.clock.runFor(400);
+  eq(await text(p, "#focusTitle"), "Emails", "trop court : rien");
+  await p.mouse.move(x, y); await p.mouse.down();
+  await p.mouse.move(x, y - 230, { steps: 8 }); await p.mouse.up();
+  await p.clock.runFor(600);
+  assert(await p.locator("#viewFocus").isVisible(), "reste en vue maximisée");
+  eq(await text(p, "#focusTitle"), "Rapport");
+  assert((await text(p, "#toastMsg")).includes("supprimée"), "bandeau");
+  await p.click("#toastUndo");
+  eq(await text(p, "#focusTitle"), "Emails");
+  return p;
+});
+spec("C7", "vue maximisée : l'écran reste allumé (verrou de veille)", async () => {
+  const context = await browser.newContext({ viewport: { width: 420, height: 860 } });
+  context.setDefaultTimeout(5000);
+  const p = await context.newPage();
+  p.errors = [];
+  p.on("pageerror", (e) => p.errors.push(e.message));
+  await p.clock.install({ time: T0 });
+  await p.addInitScript(() => {
+    window.__wake = [];
+    Object.defineProperty(navigator, "wakeLock", { configurable: true, value: { request: async (k) => { window.__wake.push("on:" + k); return { released: false, release: async () => { window.__wake.push("off"); }, addEventListener() {} }; } } });
+  });
+  await p.clock.pauseAt(new Date(T0.getTime() + 1000));
+  await p.goto(URL_, { waitUntil: "domcontentloaded" });
+  await p.waitForSelector("#app[data-ready='1']");
+  await add(p, "A 10m");
+  await p.click("#nowFocus");
+  await p.clock.runFor(300);
+  eq(await p.evaluate(() => window.__wake), ["on:screen"]);
+  await p.click("#focusBack");
+  await p.clock.runFor(300);
+  eq(await p.evaluate(() => window.__wake), ["on:screen", "off"]);
+  return p;
+});
+spec("C7", "appli Android : écran maintenu allumé en vue maximisée (natif)", async () => {
+  const context = await browser.newContext({ viewport: { width: 420, height: 860 } });
+  context.setDefaultTimeout(5000);
+  const p = await context.newPage();
+  p.errors = [];
+  p.on("pageerror", (e) => p.errors.push(e.message));
+  await p.clock.install({ time: T0 });
+  await p.addInitScript(CAPACITOR_MOCK);
+  await p.clock.pauseAt(new Date(T0.getTime() + 1000));
+  await p.goto(URL_, { waitUntil: "domcontentloaded" });
+  await p.waitForSelector("#app[data-ready='1']");
+  await add(p, "A 10m");
+  await p.click("#nowFocus");
+  await p.clock.runFor(300);
+  assert((await p.evaluate(() => window.__timerCalls.filter((c) => c.m === "awake").map((c) => c.on))).at(-1) === true, "écran allumé");
+  await p.keyboard.press("Escape");
+  await p.clock.runFor(300);
+  assert((await p.evaluate(() => window.__timerCalls.filter((c) => c.m === "awake").map((c) => c.on))).at(-1) === false, "relâché");
   return p;
 });
 

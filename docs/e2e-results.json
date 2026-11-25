@@ -1,5 +1,5 @@
 {
- "ranAt": "2026-11-24T15:18:55.607Z",
+ "ranAt": "2026-11-25T06:16:56.661Z",
  "results": [
   {
    "specId": "L1",
@@ -248,7 +248,7 @@
   },
   {
    "specId": "A11",
-   "name": "tout en haut / tout en bas en un clic sur la carte",
+   "name": "tout en haut = tâche en cours ; monter depuis la première carte aussi ; tout en bas",
    "ok": true
   },
   {
@@ -398,7 +398,7 @@
   },
   {
    "specId": "S1",
-   "name": "l'indicateur en haut ouvre la connexion",
+   "name": "l'état de la synchro (dans les réglages) ouvre la connexion",
    "ok": true
   },
   {
@@ -514,6 +514,41 @@
   {
    "specId": "N3",
    "name": "Android : notification « minuteur en cours » avec Pause et Terminer",
+   "ok": true
+  },
+  {
+   "specId": "U10",
+   "name": "pas de bandeau en haut ; champ d'ajout sous la carte « Maintenant »",
+   "ok": true
+  },
+  {
+   "specId": "A8",
+   "name": "supprimer la tâche en cours en un clic (annulable)",
+   "ok": true
+  },
+  {
+   "specId": "A10",
+   "name": "glisser sur le champ d'ajout (au-dessus de la file) en fait aussi la tâche en cours",
+   "ok": true
+  },
+  {
+   "specId": "T3",
+   "name": "descendre une tâche au-dessus d'un jalon : elle reste au-dessus",
+   "ok": true
+  },
+  {
+   "specId": "C7",
+   "name": "vue maximisée : glisser vers le haut supprime la tâche (annulable)",
+   "ok": true
+  },
+  {
+   "specId": "C7",
+   "name": "vue maximisée : l'écran reste allumé (verrou de veille)",
+   "ok": true
+  },
+  {
+   "specId": "C7",
+   "name": "appli Android : écran maintenu allumé en vue maximisée (natif)",
    "ok": true
   }
  ]

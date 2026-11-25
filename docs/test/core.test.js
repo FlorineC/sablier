@@ -178,12 +178,12 @@ spec("A7", "dupliquer sous l'original, temps remis à zéro", () => {
   expect(titles(tasks(s))).toEqual(["A", "A", "B"]);
   expect(tasks(s).map((t) => t.spentSec)).toEqual([90, 0, 0]);
 });
-spec("A8", "supprimer arrête le minuteur de la liste", () => {
-  let s = withTasks("A", "B");
+spec("A8", "supprimer une tâche de la file ne touche pas au minuteur", () => {
+  let s = withTasks("A", "B", "C");
   s = C.startTask(s, L(s), null, T0);
-  s = C.deleteTask(s, tid(s, 0));
-  expect(titles(tasks(s))).toEqual(["B"]);
-  expect(list(s).active).toBeNull();
+  s = C.deleteTask(s, tid(s, 1), T0 + sec(5));
+  expect(titles(tasks(s))).toEqual(["A", "C"]);
+  expect(list(s).active).toEqual({ taskId: tid(s, 0), startedAtMs: T0 });
 });
 
 // ================================================================ U / B — récap
@@ -1166,4 +1166,48 @@ spec("N3", "notification « minuteur en cours » : tâche qui finit le plus tôt
   expect(C.ongoingInfo(s, T0 + min(3)).text).toBe("Ma liste");
   s = C.pauseTask(s, l1, T0 + min(3));
   expect(C.ongoingInfo(s, T0 + min(3))).toBe(null);
+});
+
+// ================================================================ v18 — jalons à leur place, suppression de la tâche en cours
+spec("T3", "un jalon reste à sa place quand on réordonne", () => {
+  const titles = (s) => tasks(s).map((t) => t.title + (Number.isFinite(t.finishByMs) ? "|" : ""));
+  let s = withTasks("H", "A", "B", "C");
+  s = C.setTaskFinishBy(s, tid(s, 2), NOW); // H A B | C
+  expect(titles(s)).toEqual(["H", "A", "B|", "C"]);
+  s = C.moveTask(s, tid(s, 1), 1); // A descend sous B : le jalon reste sous la 3e tâche
+  expect(titles(s)).toEqual(["H", "B", "A|", "C"]);
+  s = C.moveTaskToEdge(s, tid(s, 3), "top");
+  expect(titles(s)).toEqual(["C", "H", "B|", "A"]);
+  s = C.reorderTasks(s, L(s), [tid(s, 3), tid(s, 0), tid(s, 1), tid(s, 2)]);
+  expect(titles(s)).toEqual(["A", "C", "H|", "B"]);
+  s = C.startTask(s, L(s), tid(s, 3), T0); // ▶ sur B : B en tête
+  expect(titles(s)).toEqual(["B", "A", "C|", "H"]);
+  s = C.skipTask(s, L(s), T0 + sec(5));
+  expect(titles(s)).toEqual(["A", "C", "H|", "B"]);
+});
+spec("T3", "supprimer ou mettre de côté la tâche du jalon : il passe à la précédente", () => {
+  const titles = (s) => tasks(s).map((t) => t.title + (Number.isFinite(t.finishByMs) ? "|" : ""));
+  let s = withTasks("A", "B", "C");
+  s = C.setTaskFinishBy(s, tid(s, 1), NOW);
+  expect(titles(C.deleteTask(s, tid(s, 1)))).toEqual(["A|", "C"]);
+  expect(titles(C.moveToLater(s, tid(s, 1), T0))).toEqual(["A|", "C"]);
+  s = C.setTaskFinishBy(C.setTaskFinishBy(s, tid(s, 1), null), tid(s, 0), NOW);
+  expect(titles(C.deleteTask(s, tid(s, 0)))).toEqual(["B", "C"]);
+});
+spec("A8", "supprimer la tâche en cours : la suivante prend sa place", () => {
+  let s = withTasks({ title: "A", minutes: 10 }, { title: "B", minutes: 10 }, "C");
+  s = C.startTask(s, L(s), null, T0);
+  let d = C.deleteTask(s, tid(s, 0), T0 + min(1));
+  expect(tasks(d).map((t) => t.title)).toEqual(["B", "C"]);
+  expect(list(d).active.taskId).toBe(tid(d, 0));
+  expect(C.isRunning(d, L(d))).toBe(true); // enchaînement automatique activé par défaut
+  d = C.deleteTask(C.updateSettings(s, { autoStartNext: false }), tid(s, 0), T0 + min(1));
+  expect(C.isRunning(d, L(d))).toBe(false);
+  expect(list(d).active.taskId).toBe(tid(d, 0));
+  const p = C.pauseTask(s, L(s), T0 + sec(30));
+  const e = C.deleteTask(p, tid(p, 0), T0 + min(1));
+  expect(list(e).active.taskId).toBe(tid(e, 0));
+  expect(C.isRunning(e, L(e))).toBe(false);
+  const one = C.startTask(withTasks("Seule"), "main", null, T0);
+  expect(list(C.deleteTask(one, tid(one, 0), T0)).active).toBe(null);
 });

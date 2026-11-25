@@ -661,3 +661,24 @@ ul.task-list.is-dragging > li:not(.dragging){will-change:transform}
 }
 .focus-actions .big-btn{position:relative}
 .dur input.task-dur,.re-dur{font-size:16px}
+
+/* =========================================================================
+   v18 — sans en-tête, carte « Maintenant » avec 🗑, glisser vers le haut
+   ========================================================================= */
+.visually-hidden{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+#app > .listbar-wrap{padding-top:10px}
+.now-card > .now-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:-6px -6px 4px 0;min-height:40px}
+.now-card > .now-head .now-label{flex:1 1 auto;min-width:0}
+.now-head-acts .icon-btn.danger{color:var(--danger)}
+.now-text{padding-top:2px}
+.quick-add{margin:0 0 4px}
+#nowCard + .quick-add{margin-top:-4px}
+.sync-note{white-space:nowrap}
+.focus-card{touch-action:none}
+.swipe-reveal.up{left:50%;right:auto;top:auto;bottom:-8px;transform:translate(-50%,100%);color:var(--danger);opacity:var(--reveal-up,0)}
+.now-card .clock-box .now-timer.long{font-size:17px;letter-spacing:-.6px;padding:2px}
+.now-card .clock-box.pie .now-timer.long{font-size:13px}
+@media (max-width:360px){
+  .now-card .clock-box .now-timer.long{font-size:14px;letter-spacing:-.8px}
+  .now-card .clock-box.pie .now-timer.long{font-size:11.5px}
+}

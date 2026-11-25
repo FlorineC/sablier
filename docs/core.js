@@ -398,12 +398,23 @@ export function updateTask(state, taskId, patch = {}) {
   return s;
 }
 
-export function deleteTask(state, taskId) {
+// Supprimer la tâche en cours : la suivante prend sa place (elle démarre si le minuteur tournait
+// et que l'enchaînement automatique est activé).
+export function deleteTask(state, taskId, now = Date.now()) {
   if (!locate(state, taskId)) return state;
   const s = clone(state);
   const { list, idx } = locate(s, taskId);
+  const wasActive = !!(list.active && list.active.taskId === taskId);
+  const wasRunning = wasActive && listRunning(list);
+  const by = wasActive ? list.active.startedBy : null;
+  handOverGap(list, idx);
   list.tasks.splice(idx, 1);
-  if (list.active && list.active.taskId === taskId) list.active = null;
+  if (wasActive) {
+    const next = list.tasks[0];
+    list.active = next ? { taskId: next.id, startedAtMs: wasRunning && s.settings.autoStartNext ? now : null } : null;
+    if (list.active && by) list.active.startedBy = by;
+    if (list.alertedTaskId === taskId) list.alertedTaskId = null;
+  }
   return s;
 }
 
@@ -415,6 +426,22 @@ export function duplicateTask(state, taskId) {
   return s;
 }
 
+// Jalons « Fin voulue » : ils appartiennent à une place dans la file, pas à une tâche.
+// Après un réordonnancement, chaque jalon retrouve la même position (mute `list`).
+const gapsOf = (tasks) => tasks.map((t) => (Number.isFinite(t.finishByMs) ? t.finishByMs : null));
+function restoreGaps(list, gaps) {
+  list.tasks.forEach((t) => { delete t.finishByMs; });
+  gaps.forEach((ms, i) => { if (ms !== null && list.tasks[i]) list.tasks[i].finishByMs = ms; });
+}
+// Une tâche quitte la file : son jalon passe à la tâche précédente (mute `list`, avant le retrait).
+function handOverGap(list, idx) {
+  const t = list.tasks[idx];
+  if (!t || !Number.isFinite(t.finishByMs)) return;
+  const prev = list.tasks[idx - 1];
+  if (prev && !Number.isFinite(prev.finishByMs)) prev.finishByMs = t.finishByMs;
+  delete t.finishByMs;
+}
+
 export function moveTask(state, taskId, delta) {
   const loc = locate(state, taskId);
   if (!loc) return state;
@@ -423,8 +450,10 @@ export function moveTask(state, taskId, delta) {
   if (loc.idx < minIdx || j < minIdx || j >= loc.list.tasks.length) return state;
   const s = clone(state);
   const { list } = locate(s, taskId);
+  const gaps = gapsOf(list.tasks);
   const [t] = list.tasks.splice(loc.idx, 1);
   list.tasks.splice(j, 0, t);
+  restoreGaps(list, gaps);
   return s;
 }
 
@@ -432,6 +461,7 @@ export function reorderTasks(state, listId, orderedIds) {
   if (!getList(state, listId)) return state;
   const s = clone(state);
   const list = getList(s, listId);
+  const gaps = gapsOf(list.tasks);
   const byId = new Map(list.tasks.map((t) => [t.id, t]));
   const out = [];
   for (const id of orderedIds) {
@@ -440,6 +470,7 @@ export function reorderTasks(state, listId, orderedIds) {
   }
   list.tasks = out.concat([...byId.values()]);
   pinActive(list);
+  restoreGaps(list, gaps);
   return s;
 }
 
@@ -452,7 +483,9 @@ export function promoteTask(state, listId, taskId, now) {
   if (listRunning(l)) return startTask(state, listId, taskId, now);
   const s = clone(state);
   const list = getList(s, listId);
+  const gaps = gapsOf(list.tasks);
   list.tasks.unshift(list.tasks.splice(idx, 1)[0]);
+  restoreGaps(list, gaps);
   if (list.active) list.active = { taskId, startedAtMs: null };
   return s;
 }
@@ -467,8 +500,10 @@ export function moveTaskToEdge(state, taskId, edge) {
   if (target === loc.idx) return state;
   const s = clone(state);
   const { list } = locate(s, taskId);
+  const gaps = gapsOf(list.tasks);
   const [t] = list.tasks.splice(loc.idx, 1);
   list.tasks.splice(target, 0, t);
+  restoreGaps(list, gaps);
   return s;
 }
 
@@ -478,6 +513,7 @@ export function moveTaskToList(state, taskId, targetListId, now) {
   const s = clone(state);
   const { list, idx } = locate(s, taskId);
   if (list.active && list.active.taskId === taskId) { accumulate(list, now); list.active = null; }
+  handOverGap(list, idx);
   const [t] = list.tasks.splice(idx, 1);
   getList(s, targetListId).tasks.push(t);
   return s;
@@ -525,8 +561,10 @@ export function startTask(state, listId, taskId, now) {
   const s = clone(state);
   const list = getList(s, listId);
   accumulate(list, now);
+  const gaps = gapsOf(list.tasks);
   list.active = { taskId: target, startedAtMs: now };
   pinActive(list);
+  restoreGaps(list, gaps);
   return s;
 }
 
@@ -666,8 +704,10 @@ export function skipTask(state, listId, now) {
   const wasRunning = listRunning(list);
   accumulate(list, now);
   const idx = list.tasks.findIndex((t) => t.id === list.active.taskId);
+  const gaps = gapsOf(list.tasks);
   const [t] = list.tasks.splice(idx, 1);
   list.tasks.push(t);
+  restoreGaps(list, gaps);
   const by = list.active.startedBy;
   list.active = { taskId: list.tasks[0].id, startedAtMs: wasRunning ? now : null };
   if (by) list.active.startedBy = by;
@@ -717,6 +757,7 @@ export function moveToLater(state, taskId, now) {
   const s = clone(state);
   const { list, idx } = locate(s, taskId);
   if (list.active && list.active.taskId === taskId) { accumulate(list, now); list.active = null; }
+  handOverGap(list, idx);
   s.later.push(list.tasks.splice(idx, 1)[0]);
   return s;
 }

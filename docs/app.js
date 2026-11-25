@@ -1,6 +1,6 @@
 // Sablier — couche interface. Toute la logique métier est dans core.js (testée).
 import * as C from "./core.js";
-import { setupAlarms, syncAlarms, isNative, setupOngoing, syncOngoing, batteryStatus, openBatterySettings } from "./notify.js";
+import { setupAlarms, syncAlarms, isNative, setupOngoing, syncOngoing, batteryStatus, openBatterySettings, keepAwake } from "./notify.js";
 
 const $ = (id) => document.getElementById(id);
 const LS_KEY = "sablier.v2"; // même clé qu'avant : les données locales existantes sont migrées
@@ -366,6 +366,24 @@ function go(v) {
 window.addEventListener("hashchange", () => { const v = viewFromHash(); if (v !== view) go(v); });
 
 // ------------------------------------------------------------ rendu
+// Vue maximisée : l'écran reste allumé (API Wake Lock du navigateur, ou réglage natif dans l'appli Android).
+let wakeLock = null, wakeWanted = false;
+async function setAwake(on) {
+  if (on === wakeWanted && (!on || wakeLock || isNative())) return;
+  wakeWanted = on;
+  if (isNative()) { keepAwake(on); return; }
+  try {
+    if (on && !wakeLock && navigator.wakeLock) {
+      wakeLock = await navigator.wakeLock.request("screen");
+      if (!wakeWanted) { const w = wakeLock; wakeLock = null; w.release(); }
+    } else if (!on && wakeLock) { const w = wakeLock; wakeLock = null; await w.release(); }
+  } catch { wakeLock = null; }
+}
+document.addEventListener("visibilitychange", () => {
+  // le verrou est rendu quand la page est masquée : on le reprend au retour
+  if (!document.hidden && wakeWanted && !isNative()) { wakeLock = null; wakeWanted = false; setAwake(true); }
+});
+
 function render() {
   if (view === "focus" && !C.activeTask(state, cur().id)) view = "list";
   if (view === "routine-edit" && !draft) view = "routines";
@@ -374,6 +392,7 @@ function render() {
   const meta = document.querySelector('meta[name="theme-color"]');
   if (meta) meta.setAttribute("content", getComputedStyle(document.body).backgroundColor);
   for (const [v, id] of Object.entries(SECTIONS)) $(id).hidden = view !== v;
+  setAwake(view === "focus");
   $("listBarWrap").hidden = view !== "list";
   $("tabbar").hidden = view === "focus" || view === "routine-edit";
   const tabView = view === "routine-edit" ? "routines" : view;
@@ -407,8 +426,8 @@ function queueCard(t, i, n, minIdx) {
   return `<li class="task-card" data-id="${esc(t.id)}">
   <span class="task-eta"></span>
   <div class="move-col">
-    <button data-action="top" title="Tout en haut" aria-label="Tout en haut"${idx <= minIdx ? " disabled" : ""}>${icon("top")}</button>
-    <button data-action="up" title="Monter" aria-label="Monter"${idx <= minIdx ? " disabled" : ""}>${icon("up")}</button>
+    <button data-action="top" title="En faire la tâche en cours" aria-label="Tout en haut : en faire la tâche en cours">${icon("top")}</button>
+    <button data-action="up" title="Monter" aria-label="${idx <= minIdx ? "Monter : en faire la tâche en cours" : "Monter"}">${icon("up")}</button>
     <button data-action="down" title="Descendre" aria-label="Descendre"${idx >= n - 1 ? " disabled" : ""}>${icon("down")}</button>
     <button data-action="bottom" title="Tout en bas" aria-label="Tout en bas"${idx >= n - 1 ? " disabled" : ""}>${icon("bottom")}</button>
   </div>
@@ -1007,6 +1026,19 @@ $("nowReset").addEventListener("click", () => { const h = cur().tasks[0]; if (h)
 $("focusReset").addEventListener("click", () => { const a = C.activeTask(state, cur().id); if (a) resetTask(a.id); });
 $("nowLater").addEventListener("click", () => { const h = cur().tasks[0]; if (h) sendLater(h.id); });
 
+// En faire la tâche en cours (carte « Maintenant ») : démarre si la liste tournait.
+function promote(id) {
+  const l = cur();
+  if (!l.active && l.tasks[0] && l.tasks[0].id !== id) { commit(C.moveTaskToEdge(state, id, "top")); return; }
+  commit(C.promoteTask(state, l.id, id, now()));
+  const b = document.querySelector("#nowToggle");
+  if (b) b.focus({ preventScroll: true });
+}
+function deleteWithUndo(id) {
+  const l = listOf(id), t = l && l.tasks.find((x) => x.id === id);
+  if (t) commit(C.deleteTask(state, id, now()), { undoable: true, toast: `« ${t.title} » supprimée` });
+}
+$("nowDelete").addEventListener("click", () => { const h = cur().tasks[0]; if (h) deleteWithUndo(h.id); });
 function sendLater(id) {
   const t = listOf(id) && listOf(id).tasks.find((x) => x.id === id);
   if (t) commit(C.moveToLater(state, id, now()), { undoable: true, toast: `« ${t.title} » → Plus tard` });
@@ -1111,16 +1143,19 @@ $("taskList").addEventListener("click", (e) => {
   if (b.dataset.action === "play") { unlockAudio(); commit(C.startTask(state, cur().id, id, now())); }
   if (b.dataset.action === "menu") openTaskSheet(id);
   if (b.dataset.action === "insert") { insertAfter = id; insertFocus = true; renderQueue(); }
-  if (b.dataset.action === "top") commit(C.moveTaskToEdge(state, id, "top"));
+  if (b.dataset.action === "top") promote(id);
   if (b.dataset.action === "bottom") commit(C.moveTaskToEdge(state, id, "bottom"));
-  if (b.dataset.action === "up") commit(C.moveTask(state, id, -1));
+  if (b.dataset.action === "up") {
+    const l = cur(), i = l.tasks.findIndex((x) => x.id === id);
+    if (i <= (l.active ? 1 : 0)) promote(id); else commit(C.moveTask(state, id, -1));
+  }
   if (b.dataset.action === "reset") resetTask(id);
   if (b.dataset.action === "down") commit(C.moveTask(state, id, 1));
   if (b.dataset.action === "later") sendLater(id);
   if (b.dataset.action === "complete") completeIn(cur().id, id);
   if (b.dataset.action === "delete") {
     const t = cur().tasks.find((x) => x.id === id);
-    if (t) commit(C.deleteTask(state, id), { undoable: true, toast: `« ${t.title} » supprimée` });
+    if (t) commit(C.deleteTask(state, id, now()), { undoable: true, toast: `« ${t.title} » supprimée` });
   }
 });
 $("taskList").addEventListener("change", (e) => {
@@ -1187,7 +1222,8 @@ window.addEventListener("pointermove", (e) => {
   else if (e.clientY > mr.bottom - 56) $("main").scrollTop += 14;
   const hero = $("nowCard");
   const hr = hero.getBoundingClientRect();
-  drag.promote = !drag.li.classList.contains("milestone") && !hero.hidden && e.clientY <= hr.bottom + 8;
+  const qTop = $("taskList").getBoundingClientRect().top;
+  drag.promote = !drag.li.classList.contains("milestone") && !hero.hidden && e.clientY <= Math.max(hr.bottom + 8, qTop - 4);
   hero.classList.toggle("drop-target", drag.promote);
   if (!drag.promote) {
     const list = $("taskList");
@@ -1360,7 +1396,7 @@ $("taskSheet").addEventListener("click", (e) => {
   closeSheets();
   switch (b.dataset.ts) {
     case "dup": commit(C.duplicateTask(state, id)); break;
-    case "delete": commit(C.deleteTask(state, id), { undoable: true, toast: `« ${t.title} » supprimée` }); break;
+    case "delete": commit(C.deleteTask(state, id, now()), { undoable: true, toast: `« ${t.title} » supprimée` }); break;
     case "move": {
       const target = C.getList(state, b.dataset.list);
       commit(C.moveTaskToList(state, id, b.dataset.list, now()), { undoable: true, toast: `« ${t.title} » → ${target ? target.name : ""}` });
@@ -1746,7 +1782,7 @@ $("addDeadline").addEventListener("click", () => openDeadline("new"));
 (() => {
   const el = $("focusCard");
   let sw = null;
-  const reset = () => { el.style.transform = ""; el.style.opacity = ""; el.classList.remove("swiping"); el.style.setProperty("--reveal", "0"); };
+  const reset = () => { el.style.transform = ""; el.style.opacity = ""; el.classList.remove("swiping"); el.style.setProperty("--reveal", "0"); el.style.setProperty("--reveal-up", "0"); };
   el.addEventListener("pointerdown", (e) => {
     if (e.button > 0 || e.target.closest(".timer-input-wrap")) return;
     sw = { id: e.pointerId, x0: e.clientX, y0: e.clientY, dx: 0, active: false };
@@ -1755,19 +1791,27 @@ $("addDeadline").addEventListener("click", () => openDeadline("new"));
     if (!sw || e.pointerId !== sw.id) return;
     const dx = e.clientX - sw.x0, dy = e.clientY - sw.y0;
     if (!sw.active) {
-      if (Math.abs(dx) < 10 || Math.abs(dx) < Math.abs(dy)) return;
+      if (Math.max(Math.abs(dx), Math.abs(dy)) < 10) return;
+      sw.dir = Math.abs(dx) >= Math.abs(dy) ? "x" : "y";
       sw.active = true;
       try { el.setPointerCapture(e.pointerId); } catch { /* ignore */ }
       el.classList.add("swiping");
     }
-    sw.dx = Math.min(0, dx);
-    const w = el.getBoundingClientRect().width || 300;
-    el.style.transform = `translateX(${sw.dx}px) rotate(${(sw.dx / w) * 6}deg)`;
-    el.style.setProperty("--reveal", String(Math.min(1, -sw.dx / (w * 0.35))));
+    if (sw.dir === "x") {
+      sw.dx = Math.min(0, dx);
+      const w = el.getBoundingClientRect().width || 300;
+      el.style.transform = `translateX(${sw.dx}px) rotate(${(sw.dx / w) * 6}deg)`;
+      el.style.setProperty("--reveal", String(Math.min(1, -sw.dx / (w * 0.35))));
+    } else {
+      sw.dy = Math.min(0, dy);
+      const h = el.getBoundingClientRect().height || 300;
+      el.style.transform = `translateY(${sw.dy}px)`;
+      el.style.setProperty("--reveal-up", String(Math.min(1, -sw.dy / (h * 0.35))));
+    }
   });
   const end = (e) => {
     if (!sw || (e && e.pointerId !== sw.id)) return;
-    const { dx, active } = sw;
+    const { dx = 0, dy = 0, dir, active } = sw;
     sw = null;
     if (!active) return;
     // le clic qui suit un glisser ne doit pas ouvrir la saisie du temps
@@ -1775,7 +1819,13 @@ $("addDeadline").addEventListener("click", () => openDeadline("new"));
     window.addEventListener("click", swallow, true);
     setTimeout(() => window.removeEventListener("click", swallow, true), 60);
     const w = el.getBoundingClientRect().width || 300;
-    if (dx < -Math.max(90, w * 0.3)) {
+    const hgt = el.getBoundingClientRect().height || 300;
+    if (dir === "y" && dy < -Math.max(90, hgt * 0.3)) {
+      el.classList.add("leaving");
+      el.style.transform = `translateY(${-hgt * 1.2}px)`;
+      el.style.opacity = "0";
+      setTimeout(() => { el.classList.remove("leaving"); reset(); const a = C.activeTask(state, cur().id); if (a) deleteWithUndo(a.id); }, 220);
+    } else if (dir === "x" && dx < -Math.max(90, w * 0.3)) {
       el.classList.add("leaving");
       el.style.transform = `translateX(${-w * 1.3}px) rotate(-8deg)`;
       el.style.opacity = "0";

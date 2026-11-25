@@ -7,6 +7,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.PowerManager;
 import android.provider.Settings;
+import android.view.WindowManager;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
@@ -62,6 +63,19 @@ public class TimerPlugin extends Plugin {
     @PluginMethod
     public void hide(PluginCall call) {
         getContext().stopService(new Intent(getContext(), TimerService.class));
+        call.resolve();
+    }
+
+    /** Vue maximisée : garder l'écran allumé. */
+    @PluginMethod
+    public void keepAwake(PluginCall call) {
+        final boolean on = Boolean.TRUE.equals(call.getBoolean("on", false));
+        if (getActivity() != null) {
+            getActivity().runOnUiThread(() -> {
+                if (on) getActivity().getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                else getActivity().getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            });
+        }
         call.resolve();
     }
 

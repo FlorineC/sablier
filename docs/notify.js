@@ -83,3 +83,7 @@ export function openBatterySettings() {
   const tp = timerPlugin();
   if (tp && typeof tp.openBatterySettings === "function") Promise.resolve(tp.openBatterySettings()).catch(() => {});
 }
+export function keepAwake(on) {
+  const tp = timerPlugin();
+  if (tp && typeof tp.keepAwake === "function") Promise.resolve(tp.keepAwake({ on: !!on })).catch(() => {});
+}

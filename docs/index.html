@@ -13,10 +13,7 @@
 </head>
 <body>
 <div id="app">
-  <header class="topbar">
-    <h1><span class="logo" aria-hidden="true">⏳</span> Sablier</h1>
-    <button class="sync-note" id="syncNote" title="Synchronisation"></button>
-  </header>
+  <h1 class="visually-hidden">Sablier</h1>
 
   <div class="listbar-wrap" id="listBarWrap">
     <button class="chip-arrow" id="listPrev" aria-label="Listes précédentes" data-icon="chevL" hidden></button>
@@ -38,14 +35,18 @@
         <div class="progress" id="listProgress" role="progressbar" aria-label="Progression de la liste"><div class="bar"></div></div>
       </div>
 
-      <form class="quick-add" id="quickAddForm" autocomplete="off">
-        <input id="quickAdd" type="text" placeholder="Ajouter une tâche… ex. Emails 15m" aria-label="Nouvelle tâche (durée possible en fin : 15m, 1h30)" enterkeyhint="done">
-        <button type="button" class="add-top" id="quickAddTop" aria-label="Ajouter en haut de la liste" title="Ajouter en haut (Maj+Entrée)" data-icon="top"></button>
-        <button type="submit" class="add-main" aria-label="Ajouter en bas de la liste" title="Ajouter en bas (Entrée)" data-icon="plus"></button>
-      </form>
 
       <article class="now-card" id="nowCard" aria-labelledby="nowTitle" hidden>
         <span class="edge-label" id="nowEta"></span>
+        <div class="now-head">
+          <span class="now-label" id="nowLabel">Prochaine</span>
+          <div class="now-head-acts">
+            <button class="icon-btn" id="nowReset" aria-label="Remettre le temps à zéro" title="Remettre le temps à zéro" data-icon="reset" hidden></button>
+            <button class="icon-btn" id="nowLater" aria-label="Plus tard" title="Plus tard" data-icon="later"></button>
+            <button class="icon-btn danger" id="nowDelete" aria-label="Supprimer la tâche" title="Supprimer" data-icon="trash"></button>
+            <button class="icon-btn" id="nowMenu" aria-label="Modifier la tâche" title="Modifier" data-icon="edit"></button>
+          </div>
+        </div>
         <div class="now-top">
           <div class="clock-box" id="nowClockBox">
             <svg class="clock-svg" id="nowClock" viewBox="0 0 240 240" aria-hidden="true">
@@ -66,14 +67,6 @@
             </div>
           </div>
           <div class="now-text">
-            <div class="now-head">
-              <span class="now-label" id="nowLabel">Prochaine</span>
-              <div class="now-head-acts">
-                <button class="icon-btn" id="nowReset" aria-label="Remettre le temps à zéro" title="Remettre le temps à zéro" data-icon="reset" hidden></button>
-                <button class="icon-btn" id="nowLater" aria-label="Plus tard" title="Plus tard" data-icon="later"></button>
-                <button class="icon-btn" id="nowMenu" aria-label="Modifier la tâche" title="Modifier" data-icon="edit"></button>
-              </div>
-            </div>
             <h2 class="now-title"><button type="button" class="now-emoji" id="nowEmoji" title="Changer l'emoji" aria-label="Changer l'emoji"></button><span id="nowTitle"></span></h2>
             <div class="now-meta" id="nowMeta"><span id="nowPlanned"></span><span id="nowInfo"></span></div>
           </div>
@@ -87,6 +80,12 @@
           <button class="round-btn" id="nowFocus" aria-label="Vue maximisée" title="Vue maximisée (F)" data-icon="focus"></button>
         </div>
       </article>
+
+      <form class="quick-add" id="quickAddForm" autocomplete="off">
+        <input id="quickAdd" type="text" placeholder="Ajouter une tâche… ex. Emails 15m" aria-label="Nouvelle tâche (durée possible en fin : 15m, 1h30)" enterkeyhint="done">
+        <button type="button" class="add-top" id="quickAddTop" aria-label="Ajouter en haut de la liste" title="Ajouter en haut (Maj+Entrée)" data-icon="top"></button>
+        <button type="submit" class="add-main" aria-label="Ajouter en bas de la liste" title="Ajouter en bas (Entrée)" data-icon="plus"></button>
+      </form>
 
       <h3 class="queue-title" id="queueTitle" hidden>À suivre</h3>
       <ul class="task-list" id="taskList"></ul>
@@ -199,6 +198,7 @@
             </div>
           </div>
         </div>
+        <div class="setting"><span>Synchronisation</span><button class="sync-note" id="syncNote" title="Synchronisation"></button></div>
         <p class="set-group">Sauvegarde</p>
         <div class="setting"><span>Mes données</span>
           <div class="setting-ctrl"><button class="btn ghost" id="exportData">Exporter</button><button class="btn ghost" id="importData">Importer</button></div>
@@ -214,6 +214,7 @@
       <div class="focus-list" id="focusList"></div>
       <div class="focus-card" id="focusCard">
       <div class="swipe-reveal" aria-hidden="true"><span data-icon="check"></span> Terminer</div>
+      <div class="swipe-reveal up" aria-hidden="true"><span data-icon="trash"></span> Supprimer</div>
       <div class="focus-head"><span class="focus-emoji" id="focusEmoji" aria-hidden="true"></span><h2 class="focus-title" id="focusTitle"></h2></div>
       <div class="ring-wrap" id="focusClock">
         <svg class="pie-svg" id="focusPie" viewBox="0 0 240 240" aria-hidden="true" hidden>
